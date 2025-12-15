@@ -7,5 +7,7 @@ struct NotebookApp: App {
             NotebookView()
         }
         .defaultSize(CGSize(width: 1024, height: 768))
+            NotebookPageView()
+        }
     }
 }

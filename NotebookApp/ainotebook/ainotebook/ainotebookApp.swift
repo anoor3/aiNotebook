@@ -1,10 +1,11 @@
 import SwiftUI
 
 @main
-struct NotebookApp: App {
+struct ainotebookApp: App {
     var body: some Scene {
         WindowGroup {
             NotebookPageView()
         }
+        .defaultSize(CGSize(width: 1024, height: 768))
     }
 }

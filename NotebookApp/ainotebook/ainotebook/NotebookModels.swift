@@ -6,12 +6,18 @@ struct NotebookPageModel: Identifiable, Hashable {
     var title: String
     var created: Date
     var paperStyle: PaperStyle
+    var drawingData: Data?
 
-    init(id: UUID = UUID(), title: String, created: Date = Date(), paperStyle: PaperStyle = .grid) {
+    init(id: UUID = UUID(),
+         title: String,
+         created: Date = Date(),
+         paperStyle: PaperStyle = .grid,
+         drawingData: Data? = nil) {
         self.id = id
         self.title = title
         self.created = created
         self.paperStyle = paperStyle
+        self.drawingData = drawingData
     }
 }
 
@@ -54,7 +60,11 @@ struct Notebook: Identifiable, Hashable {
             normalizedPages = [NotebookPageModel(title: "Page 1", paperStyle: paperStyle)]
         } else {
             normalizedPages = pages.map { page in
-                NotebookPageModel(id: page.id, title: page.title, created: page.created, paperStyle: paperStyle)
+                NotebookPageModel(id: page.id,
+                                  title: page.title,
+                                  created: page.created,
+                                  paperStyle: paperStyle,
+                                  drawingData: page.drawingData)
             }
         }
 

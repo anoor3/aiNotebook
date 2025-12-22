@@ -10,6 +10,8 @@ private struct PageVisibilityPreferenceKey: PreferenceKey {
 }
 
 struct NotebookPageView: View {
+    @ObservedObject var pageStore: NotebookPageStore
+    var paperStyle: PaperStyle
     private static let palette: [UIColor] = [
         UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0),
         UIColor(red: 0.16, green: 0.48, blue: 0.32, alpha: 1.0),
@@ -21,9 +23,7 @@ struct NotebookPageView: View {
     private let scrollSpaceName = "NotebookScroll"
     private let defaultPageSize = CGSize(width: 800, height: 1000)
 
-    @State private var pages: [CanvasController]
     @State private var isLoadingNextPage = false
-    @State private var activePageID: UUID?
     @State private var currentStrokeColor: UIColor
     @State private var currentStrokeWidth: CGFloat
     @State private var isUsingEraser = false
@@ -40,15 +40,18 @@ struct NotebookPageView: View {
         Color(red: 0.74, green: 0.41, blue: 0.89),
         Color(red: 0.95, green: 0.52, blue: 0.70)
     ]
+    @State private var showPageIndicator = false
+    @State private var pageIndicatorWorkItem: DispatchWorkItem?
+    @State private var scrollProxy: ScrollViewProxy?
+    @State private var isProgrammaticJump = false
 
-    init() {
+    init(paperStyle: PaperStyle = .grid, pageStore: NotebookPageStore) {
+        self.paperStyle = paperStyle
+        self._pageStore = ObservedObject(wrappedValue: pageStore)
         let defaultColor = Self.palette[0]
         let defaultWidth = Self.thicknessOptions[1]
-        let controller = CanvasController(strokeColor: defaultColor, strokeWidth: defaultWidth)
-        _pages = State(initialValue: [controller])
         _currentStrokeColor = State(initialValue: defaultColor)
         _currentStrokeWidth = State(initialValue: defaultWidth)
-        _activePageID = State(initialValue: controller.id)
     }
 
     var body: some View {
@@ -64,32 +67,40 @@ struct NotebookPageView: View {
                     toolbar
                         .padding(.top, 12)
 
-                    ScrollView(.vertical, showsIndicators: false) {
-                        LazyVStack(spacing: 40) {
-                                ForEach(pages, id: \.id) { controller in
-                                    notebookPage(for: controller,
-                                                 pageSize: pageSize,
-                                                 viewportHeight: viewportHeight)
-                                    .frame(maxWidth: .infinity)
-                            }
-
-                            addPagePrompt
-                                .onAppear {
-                                    requestAdditionalPage()
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: false) {
+                            LazyVStack(spacing: 40) {
+                                    ForEach(pageStore.pages, id: \.id) { controller in
+                                        notebookPage(for: controller,
+                                                     pageSize: pageSize,
+                                                     viewportHeight: viewportHeight)
+                                        .frame(maxWidth: .infinity)
+                                        .id(controller.id)
                                 }
+
+                                addPagePrompt
+                                    .onAppear {
+                                        requestAdditionalPage()
+                                    }
+                            }
+                            .padding(.vertical, 40)
+                            .frame(maxWidth: .infinity)
                         }
-                        .padding(.vertical, 40)
-                        .frame(maxWidth: .infinity)
+                        .coordinateSpace(name: scrollSpaceName)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .onAppear {
+                            scrollProxy = proxy
+                        }
                     }
-                    .coordinateSpace(name: scrollSpaceName)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .onPreferenceChange(PageVisibilityPreferenceKey.self) { values in
                     guard let closest = values.min(by: { $0.value < $1.value }) else { return }
-                    if activePageID != closest.key {
-                        activePageID = closest.key
+                    guard !isProgrammaticJump else { return }
+                    if pageStore.activePageID != closest.key {
+                        pageStore.activePageID = closest.key
+                        showPageIndicatorTemporary()
                     }
                 }
             }
@@ -112,8 +123,30 @@ struct NotebookPageView: View {
                 }
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if showPageIndicator, let indicatorText = pageIndicatorText {
+                Text(indicatorText)
+                    .font(.caption.bold())
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(18)
+                    .transition(.opacity)
+            }
+        }
         .onChange(of: customColor) { _ in
             applyCustomColorSelection()
+        }
+        .onChange(of: pageStore.activePageID) { id in
+            guard let id = id else { return }
+            isProgrammaticJump = true
+            withAnimation {
+                scrollProxy?.scrollTo(id, anchor: .top)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isProgrammaticJump = false
+            }
+            showPageIndicatorTemporary()
         }
     }
 
@@ -254,12 +287,18 @@ struct NotebookPageView: View {
     }
 
     private var activePageController: CanvasController? {
-        guard let id = activePageID else { return pages.first }
-        return pages.first(where: { $0.id == id }) ?? pages.first
+        guard let id = pageStore.activePageID else { return pageStore.pages.first }
+        return pageStore.pages.first(where: { $0.id == id }) ?? pageStore.pages.first
+    }
+
+    private var pageIndicatorText: String? {
+        guard let activeID = pageStore.activePageID,
+              let index = pageStore.pages.firstIndex(where: { $0.id == activeID }) else { return nil }
+        return "Page \(index + 1) of \(pageStore.pages.count)"
     }
 
     private func notebookPage(for controller: CanvasController, pageSize: CGSize, viewportHeight: CGFloat) -> some View {
-        PencilCanvasView(controller: controller, pageSize: pageSize)
+        PencilCanvasView(controller: controller, pageSize: pageSize, paperStyle: paperStyle)
             .frame(width: pageSize.width, height: pageSize.height)
             .shadow(color: Color.black.opacity(0.08), radius: 18, y: 8)
             .padding(.horizontal, 4)
@@ -271,6 +310,14 @@ struct NotebookPageView: View {
             )
     }
 
+    private func showPageIndicatorTemporary() {
+        showPageIndicator = true
+        pageIndicatorWorkItem?.cancel()
+        let workItem = DispatchWorkItem { showPageIndicator = false }
+        pageIndicatorWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: workItem)
+    }
+
     private func distanceToCenter(for proxy: GeometryProxy, viewportHeight: CGFloat) -> CGFloat {
         let frame = proxy.frame(in: .named(scrollSpaceName))
         let scrollCenter = viewportHeight / 2
@@ -280,7 +327,7 @@ struct NotebookPageView: View {
     private func applyToolSettings(useEraser: Bool? = nil,
                                    strokeColor: UIColor? = nil,
                                    strokeWidth: CGFloat? = nil) {
-        for controller in pages {
+        for controller in pageStore.pages {
             if let eraser = useEraser {
                 controller.useEraser = eraser
             }
@@ -318,8 +365,8 @@ private func requestAdditionalPage() {
             let newController = CanvasController(strokeColor: currentStrokeColor,
                                                  strokeWidth: currentStrokeWidth,
                                                  useEraser: isUsingEraser)
-            pages.append(newController)
-            activePageID = newController.id
+            pageStore.pages.append(newController)
+            pageStore.activePageID = newController.id
             isLoadingNextPage = false
         }
     }
@@ -335,20 +382,20 @@ private struct CustomColorPopover: View {
     var body: some View {
         VStack(spacing: 12) {
             CustomGradientPalette(selection: $customColor, indicatorPoint: $paletteSelection)
-                .frame(width: 300, height: 300)
+                .frame(width: 280, height: 280)
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 ForEach(Array(suggestions.enumerated()), id: \.offset) { _, color in
                     Button(action: {
                         onSelectSuggestion(color)
                     }) {
                         Circle()
                             .fill(color)
-                            .frame(width: 30, height: 30)
+                            .frame(width: 28, height: 28)
                             .overlay(
                                 Circle().stroke(Color.white.opacity(0.85), lineWidth: 2)
                             )
-                            .shadow(color: Color.black.opacity(0.18), radius: 2, x: 0, y: 1)
+                            .shadow(color: Color.black.opacity(0.15), radius: 2, x: 0, y: 1)
                     }
                 }
             }
@@ -359,9 +406,9 @@ private struct CustomColorPopover: View {
             .buttonStyle(.borderedProminent)
             .padding(.top, 4)
         }
-        .padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .frame(width: 320)
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .frame(width: 300)
     }
 }
 
@@ -424,6 +471,96 @@ private struct CustomGradientPalette: View {
     }
 }
 
+private struct PaperBackground: View {
+    var style: PaperStyle
+
+    var body: some View {
+        switch style {
+        case .grid:
+            GridPaperBackground()
+        case .dot:
+            DotPaperBackground()
+        case .blank:
+            Color(red: 0.97, green: 0.96, blue: 0.92)
+        case .lined:
+            LinedPaperBackground()
+        }
+    }
+}
+
+private struct DotPaperBackground: View {
+    private let spacing: CGFloat = 28
+    private let dotColor = Color.black.opacity(0.12)
+
+    var body: some View {
+        GeometryReader { geometry in
+            Color(red: 0.97, green: 0.96, blue: 0.92)
+                .overlay(
+                    Canvas { context, size in
+                        let dotSize: CGFloat = 2
+                        var path = Path()
+                        stride(from: 0, through: size.width, by: spacing).forEach { x in
+                            stride(from: 0, through: size.height, by: spacing).forEach { y in
+                                let rect = CGRect(x: x - dotSize / 2, y: y - dotSize / 2, width: dotSize, height: dotSize)
+                                path.addEllipse(in: rect)
+                            }
+                        }
+                        context.fill(path, with: .color(dotColor))
+                    }
+                )
+        }
+    }
+}
+
+private struct LinedPaperBackground: View {
+    private let spacing: CGFloat = 32
+    private let lineColor = Color(red: 0.63, green: 0.7, blue: 0.86).opacity(0.5)
+
+    var body: some View {
+        GeometryReader { geometry in
+            Color(red: 0.97, green: 0.96, blue: 0.92)
+                .overlay(
+                    Canvas { context, size in
+                        var path = Path()
+                        stride(from: 0, through: size.height, by: spacing).forEach { y in
+                            path.move(to: CGPoint(x: 0, y: y))
+                            path.addLine(to: CGPoint(x: size.width, y: y))
+                        }
+                        context.stroke(path, with: .color(lineColor), lineWidth: 1)
+                    }
+                )
+        }
+    }
+}
+
+private struct GridPaperBackground: View {
+    private let spacing: CGFloat = 28
+    private let gridColor = Color(red: 0.78, green: 0.78, blue: 0.72).opacity(0.5)
+
+    var body: some View {
+        GeometryReader { geometry in
+            Color(red: 0.97, green: 0.96, blue: 0.92)
+                .overlay(
+                    Canvas { context, size in
+                        var path = Path()
+
+                        stride(from: 0, through: size.width, by: spacing).forEach { x in
+                            path.move(to: CGPoint(x: x, y: 0))
+                            path.addLine(to: CGPoint(x: x, y: size.height))
+                        }
+
+                        stride(from: 0, through: size.height, by: spacing).forEach { y in
+                            path.move(to: CGPoint(x: 0, y: y))
+                            path.addLine(to: CGPoint(x: size.width, y: y))
+                        }
+
+                        context.stroke(path, with: .color(gridColor), lineWidth: 0.7)
+                    }
+                )
+        }
+    }
+}
+
 /// Simple rounded control look that matches iPadOS toolbars.
 struct ToolbarButtonStyle: ButtonStyle {
     var isActive: Bool = false
@@ -443,7 +580,7 @@ struct ToolbarButtonStyle: ButtonStyle {
 
 struct NotebookPageView_Previews: PreviewProvider {
     static var previews: some View {
-        NotebookPageView()
+        NotebookPageView(pageStore: NotebookPageStore(pages: [CanvasController()]))
             .previewInterfaceOrientation(.landscapeLeft)
             .previewDevice("iPad (10th generation)")
     }

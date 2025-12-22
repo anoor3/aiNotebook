@@ -4,6 +4,7 @@ import PencilKit
 struct PencilCanvasView: UIViewRepresentable {
     @ObservedObject var controller: CanvasController
     var pageSize: CGSize
+    var paperStyle: PaperStyle = .grid
 
     func makeUIView(context: Context) -> ZoomableCanvasHostView {
         controller.canvasView.delegate = context.coordinator
@@ -11,7 +12,9 @@ struct PencilCanvasView: UIViewRepresentable {
         controller.applyCurrentTool()
         controller.updateUndoState()
 
-        let host = ZoomableCanvasHostView(canvasView: controller.canvasView, pageSize: pageSize)
+        let host = ZoomableCanvasHostView(canvasView: controller.canvasView,
+                                          pageSize: pageSize,
+                                          paperStyle: paperStyle)
         context.coordinator.attach(hostView: host)
         return host
     }
@@ -28,6 +31,7 @@ struct PencilCanvasView: UIViewRepresentable {
     final class Coordinator: NSObject, PKCanvasViewDelegate, UIScrollViewDelegate {
         private let controller: CanvasController
         private weak var hostView: ZoomableCanvasHostView?
+        private var observingGesture = false
 
         init(controller: CanvasController) {
             self.controller = controller
@@ -37,11 +41,18 @@ struct PencilCanvasView: UIViewRepresentable {
             self.hostView = hostView
             hostView.setScrollDelegate(self)
             hostView.updateInk(with: controller.canvasView.drawing)
+            if !observingGesture {
+                controller.canvasView.drawingGestureRecognizer.addTarget(self, action: #selector(handleDrawingGesture(_:)))
+                observingGesture = true
+            }
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             controller.updateUndoState()
             hostView?.updateInk(with: canvasView.drawing)
+            if !controller.useEraser {
+                hostView?.finishEraserOverlay()
+            }
         }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -66,6 +77,29 @@ struct PencilCanvasView: UIViewRepresentable {
             }
         }
 
+        @objc private func handleDrawingGesture(_ gesture: UIGestureRecognizer) {
+            guard let host = hostView, controller.useEraser else { return }
+            let point = gesture.location(in: host.eraserCoordinateSpace)
+            let width = controller.strokeWidth * host.currentZoomScaleFactor
+
+            switch gesture.state {
+            case .began:
+                host.beginEraserOverlay(at: point, width: width)
+            case .changed:
+                host.continueEraserOverlay(at: point, width: width)
+            case .ended, .cancelled, .failed:
+                host.finishEraserOverlay()
+            default:
+                break
+            }
+        }
+
+        deinit {
+            if observingGesture {
+                controller.canvasView.drawingGestureRecognizer.removeTarget(self, action: #selector(handleDrawingGesture(_:)))
+            }
+        }
+
     }
 }
 
@@ -75,7 +109,9 @@ final class ZoomableCanvasHostView: UIView {
     private let backgroundView = PageBackgroundView()
     private let gridView = GridPaperCanvasView()
     private let inkView = CustomInkView()
+    private let eraserOverlayView = EraserHighlightView()
     private let canvasView: PKCanvasView
+    private let paperStyle: PaperStyle
     private var widthConstraint: NSLayoutConstraint?
     private var heightConstraint: NSLayoutConstraint?
     private var currentZoomScale: CGFloat = 1.0
@@ -86,10 +122,13 @@ final class ZoomableCanvasHostView: UIView {
     }
 
     var zoomableContentView: UIView { contentView }
+    var eraserCoordinateSpace: UIView { eraserOverlayView }
+    var currentZoomScaleFactor: CGFloat { max(1.0, currentZoomScale) }
 
-    init(canvasView: PKCanvasView, pageSize: CGSize) {
+    init(canvasView: PKCanvasView, pageSize: CGSize, paperStyle: PaperStyle) {
         self.canvasView = canvasView
         self.pageSize = pageSize
+        self.paperStyle = paperStyle
         super.init(frame: .zero)
         configureHierarchy()
         updateZoomScale(1.0)
@@ -167,6 +206,18 @@ final class ZoomableCanvasHostView: UIView {
         inkView.update(drawing: drawing, scale: max(1.0, currentZoomScale))
     }
 
+    func beginEraserOverlay(at point: CGPoint, width: CGFloat) {
+        eraserOverlayView.beginStroke(at: point, width: width)
+    }
+
+    func continueEraserOverlay(at point: CGPoint, width: CGFloat) {
+        eraserOverlayView.continueStroke(at: point, width: width)
+    }
+
+    func finishEraserOverlay() {
+        eraserOverlayView.endStroke()
+    }
+
     private func configureHierarchy() {
         backgroundColor = UIColor(red: 252/255, green: 244/255, blue: 220/255, alpha: 1)
         contentView.translatesAutoresizingMaskIntoConstraints = false
@@ -182,7 +233,7 @@ final class ZoomableCanvasHostView: UIView {
         scrollView.showsVerticalScrollIndicator = false
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.delaysContentTouches = false
-        scrollView.canCancelContentTouches = false
+        scrollView.canCancelContentTouches = true
         scrollView.pinchGestureRecognizer?.requiresExclusiveTouchType = false
         scrollView.panGestureRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         scrollView.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -224,6 +275,7 @@ final class ZoomableCanvasHostView: UIView {
         backgroundView.layer.masksToBounds = true
         gridView.layer.cornerRadius = 32
         gridView.layer.masksToBounds = true
+        gridView.paperStyle = paperStyle
         inkView.isUserInteractionEnabled = false
         canvasView.layer.cornerRadius = 32
         canvasView.clipsToBounds = true
@@ -231,9 +283,10 @@ final class ZoomableCanvasHostView: UIView {
         contentView.addSubview(backgroundView)
         contentView.addSubview(gridView)
         contentView.addSubview(inkView)
+        contentView.addSubview(eraserOverlayView)
         contentView.addSubview(canvasView)
 
-        let subviews = [backgroundView, gridView, inkView, canvasView]
+        let subviews = [backgroundView, gridView, inkView, eraserOverlayView, canvasView]
         subviews.forEach { subview in
             NSLayoutConstraint.activate([
                 subview.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -255,7 +308,56 @@ final class ZoomableCanvasHostView: UIView {
 
 final class CanvasScrollView: UIScrollView {
     override func touchesShouldCancel(in view: UIView) -> Bool {
-        false
+        true
+    }
+}
+
+final class EraserHighlightView: UIView {
+    private let shapeLayer = CAShapeLayer()
+    private var path = UIBezierPath()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        commonInit()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        commonInit()
+    }
+
+    private func commonInit() {
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        shapeLayer.strokeColor = UIColor.white.withAlphaComponent(0.4).cgColor
+        shapeLayer.fillColor = UIColor.clear.cgColor
+        shapeLayer.lineCap = .round
+        shapeLayer.lineJoin = .round
+        shapeLayer.shadowColor = UIColor.black.cgColor
+        shapeLayer.shadowOpacity = 0.2
+        shapeLayer.shadowRadius = 4
+        layer.addSublayer(shapeLayer)
+    }
+
+    func beginStroke(at point: CGPoint, width: CGFloat) {
+        path = UIBezierPath()
+        path.move(to: point)
+        updateLayer(lineWidth: width)
+    }
+
+    func continueStroke(at point: CGPoint, width: CGFloat) {
+        path.addLine(to: point)
+        updateLayer(lineWidth: width)
+    }
+
+    func endStroke() {
+        path.removeAllPoints()
+        shapeLayer.path = nil
+    }
+
+    private func updateLayer(lineWidth: CGFloat) {
+        shapeLayer.path = path.cgPath
+        shapeLayer.lineWidth = max(4, lineWidth + 12)
     }
 }
 
@@ -274,7 +376,7 @@ final class PageBackgroundView: UIView {
 }
 
 final class GridPaperCanvasView: UIView {
-    private let spacing: CGFloat = 32
+    var paperStyle: PaperStyle = .grid
     private let gridColor = UIColor(red: 205/255, green: 205/255, blue: 185/255, alpha: 0.85)
 
     override init(frame: CGRect) {
@@ -291,29 +393,63 @@ final class GridPaperCanvasView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
-        let scale = contentScaleFactor
-        let lineWidth = 1.0 / scale
-        context.setStrokeColor(gridColor.cgColor)
-        context.setLineWidth(lineWidth)
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
 
-        let insetRect = rect.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+        switch paperStyle {
+        case .grid:
+            context.setStrokeColor(gridColor.cgColor)
+            context.setLineWidth(1.0 / contentScaleFactor)
+            drawGrid(in: context, rect: rect)
+        case .dot:
+            context.setFillColor(gridColor.withAlphaComponent(0.4).cgColor)
+            drawDots(in: context, rect: rect)
+        case .blank:
+            break
+        case .lined:
+            context.setStrokeColor(UIColor(red: 0.63, green: 0.7, blue: 0.86, alpha: 0.5).cgColor)
+            context.setLineWidth(1.0 / contentScaleFactor)
+            drawLines(in: context, rect: rect)
+        }
+    }
 
+    private func drawGrid(in context: CGContext, rect: CGRect) {
+        let spacing: CGFloat = 32
+        let insetRect = rect.insetBy(dx: 0.5, dy: 0.5)
         var x = insetRect.minX
-        while x <= insetRect.maxX + lineWidth {
+        while x <= insetRect.maxX + 0.5 {
             context.move(to: CGPoint(x: x, y: insetRect.minY))
             context.addLine(to: CGPoint(x: x, y: insetRect.maxY))
             x += spacing
         }
-
         var y = insetRect.minY
-        while y <= insetRect.maxY + lineWidth {
+        while y <= insetRect.maxY + 0.5 {
             context.move(to: CGPoint(x: insetRect.minX, y: y))
             context.addLine(to: CGPoint(x: insetRect.maxX, y: y))
             y += spacing
         }
+        context.strokePath()
+    }
 
+    private func drawDots(in context: CGContext, rect: CGRect) {
+        let spacing: CGFloat = 28
+        let dotSize: CGFloat = 2
+        let insetRect = rect.insetBy(dx: 0.5, dy: 0.5)
+        for x in stride(from: insetRect.minX, through: insetRect.maxX, by: spacing) {
+            for y in stride(from: insetRect.minY, through: insetRect.maxY, by: spacing) {
+                let dotRect = CGRect(x: x - dotSize / 2, y: y - dotSize / 2, width: dotSize, height: dotSize)
+                context.fillEllipse(in: dotRect)
+            }
+        }
+    }
+
+    private func drawLines(in context: CGContext, rect: CGRect) {
+        let spacing: CGFloat = 32
+        let insetRect = rect.insetBy(dx: 0.5, dy: 0.5)
+        for y in stride(from: insetRect.minY, through: insetRect.maxY, by: spacing) {
+            context.move(to: CGPoint(x: insetRect.minX, y: y))
+            context.addLine(to: CGPoint(x: insetRect.maxX, y: y))
+        }
         context.strokePath()
     }
 

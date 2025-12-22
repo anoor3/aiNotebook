@@ -137,6 +137,11 @@ private struct AddPageOptionsView: View {
     }
 
     private func insertPage() {
+        guard notebook.pages.count == pageStore.pages.count else {
+            assertionFailure("Page models and controllers must remain aligned")
+            return
+        }
+
         let controller = CanvasController()
         let model = NotebookPageModel(title: "Page \(notebook.pages.count + 1)", paperStyle: notebook.paperStyle)
 
@@ -172,12 +177,7 @@ private struct AddPageOptionsView: View {
             pageStore.activePageID = controller.id
             retitlePages()
         }
-
-
-        pageStore.pages.append(controller)
-        notebook.pages.append(model)
-        pageStore.activePageID = controller.id
-        retitlePages()
+        assert(notebook.pages.count == pageStore.pages.count, "Page models and controllers must stay aligned after insertion")
     }
 
     private var currentIndex: Int? {

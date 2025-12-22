@@ -33,7 +33,9 @@ struct NotebookView: View {
                         GridBackground()
                             .frame(minHeight: geometry.size.height * 3)
 
-                        PencilCanvasView(controller: canvasController, pageSize: CGSize(width: 1024, height: 1400))
+                        PencilCanvasView(controller: canvasController,
+                                          pageSize: CGSize(width: 1024, height: 1400),
+                                          paperStyle: .grid)
                             .frame(minHeight: geometry.size.height * 3)
                             .padding(.horizontal, 24)
                             .padding(.top, 16)

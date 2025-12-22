@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var pageStore = NotebookPageStore(pages: [CanvasController()])
     var body: some View {
-        NotebookPageView()
+        NotebookPageView(pageStore: pageStore)
     }
 }
 

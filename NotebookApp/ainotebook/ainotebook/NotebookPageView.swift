@@ -68,14 +68,16 @@ struct NotebookPageView: View {
                         .padding(.top, 12)
 
                     ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 40) {
-                                    ForEach(pageStore.pages, id: \.id) { controller in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVStack(spacing: 40) {
+                                ForEach(pageStore.pageModels, id: \.id) { model in
+                                    if let controller = pageStore.controller(for: model) {
                                         notebookPage(for: controller,
                                                      pageSize: pageSize,
                                                      viewportHeight: viewportHeight)
                                         .frame(maxWidth: .infinity)
-                                        .id(controller.id)
+                                        .id(model.id)
+                                    }
                                 }
 
                                 addPagePrompt
@@ -287,14 +289,13 @@ struct NotebookPageView: View {
     }
 
     private var activePageController: CanvasController? {
-        guard let id = pageStore.activePageID else { return pageStore.pages.first }
-        return pageStore.pages.first(where: { $0.id == id }) ?? pageStore.pages.first
+        pageStore.controller(for: pageStore.activePageID)
     }
 
     private var pageIndicatorText: String? {
         guard let activeID = pageStore.activePageID,
-              let index = pageStore.pages.firstIndex(where: { $0.id == activeID }) else { return nil }
-        return "Page \(index + 1) of \(pageStore.pages.count)"
+              let index = pageStore.pageModels.firstIndex(where: { $0.id == activeID }) else { return nil }
+        return "Page \(index + 1) of \(pageStore.pageModels.count)"
     }
 
     private func notebookPage(for controller: CanvasController, pageSize: CGSize, viewportHeight: CGFloat) -> some View {
@@ -327,7 +328,7 @@ struct NotebookPageView: View {
     private func applyToolSettings(useEraser: Bool? = nil,
                                    strokeColor: UIColor? = nil,
                                    strokeWidth: CGFloat? = nil) {
-        for controller in pageStore.pages {
+        for controller in pageStore.controllersInOrder {
             if let eraser = useEraser {
                 controller.useEraser = eraser
             }
@@ -357,16 +358,17 @@ struct NotebookPageView: View {
         }
     }
 
-private func requestAdditionalPage() {
+    private func requestAdditionalPage() {
         guard !isLoadingNextPage else { return }
         isLoadingNextPage = true
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            let newController = CanvasController(strokeColor: currentStrokeColor,
+            let model = NotebookPageModel(title: "Page \(pageStore.pageModels.count + 1)", paperStyle: paperStyle)
+            let newController = CanvasController(id: model.id,
+                                                 strokeColor: currentStrokeColor,
                                                  strokeWidth: currentStrokeWidth,
                                                  useEraser: isUsingEraser)
-            pageStore.pages.append(newController)
-            pageStore.activePageID = newController.id
+            pageStore.insertPage(model, controller: newController)
             isLoadingNextPage = false
         }
     }
@@ -580,7 +582,7 @@ struct ToolbarButtonStyle: ButtonStyle {
 
 struct NotebookPageView_Previews: PreviewProvider {
     static var previews: some View {
-        NotebookPageView(pageStore: NotebookPageStore(pages: [CanvasController()]))
+        NotebookPageView(pageStore: NotebookPageStore(models: [NotebookPageModel(title: "Page 1")]))
             .previewInterfaceOrientation(.landscapeLeft)
             .previewDevice("iPad (10th generation)")
     }

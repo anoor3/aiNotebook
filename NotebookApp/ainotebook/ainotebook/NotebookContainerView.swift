@@ -8,13 +8,16 @@ struct NotebookContainerView: View {
 
     init(notebook: Binding<Notebook>) {
         self._notebook = notebook
-        let controllers: [CanvasController]
-        if notebook.wrappedValue.pages.isEmpty {
-            controllers = [CanvasController()]
-        } else {
-            controllers = notebook.wrappedValue.pages.map { _ in CanvasController() }
+        let pageModels = notebook.wrappedValue.pages.isEmpty
+        ? [NotebookPageModel(title: "Page 1", paperStyle: notebook.wrappedValue.paperStyle)]
+        : notebook.wrappedValue.pages
+
+        var controllers: [UUID: CanvasController] = [:]
+        for model in pageModels {
+            controllers[model.id] = CanvasController(id: model.id)
         }
-        _pageStore = StateObject(wrappedValue: NotebookPageStore(pages: controllers))
+
+        _pageStore = StateObject(wrappedValue: NotebookPageStore(models: pageModels, controllers: controllers))
     }
 
     var body: some View {
@@ -22,6 +25,9 @@ struct NotebookContainerView: View {
             NotebookPageView(paperStyle: notebook.paperStyle, pageStore: pageStore)
                 .navigationTitle(notebook.title)
                 .navigationBarTitleDisplayMode(.inline)
+                .onChange(of: pageStore.pageModels) { models in
+                    notebook.pages = models
+                }
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -54,10 +60,11 @@ struct NotebookContainerView: View {
     }
 
     private func addNewPage() {
-        let controller = CanvasController()
-        pageStore.pages.append(controller)
-        pageStore.activePageID = controller.id
-        notebook.pages.append(NotebookPageModel(title: "Page \(notebook.pages.count + 1)", paperStyle: notebook.paperStyle))
+        let model = NotebookPageModel(title: "Page \(pageStore.pageModels.count + 1)", paperStyle: notebook.paperStyle)
+        let controller = CanvasController(id: model.id)
+        pageStore.insertPage(model, controller: controller)
+        notebook.pages.append(model)
+        retitlePages()
     }
 }
 
@@ -68,10 +75,10 @@ private struct PageListView: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(Array(pageStore.pages.enumerated()), id: \.element.id) { index, page in
+                ForEach(Array(pageStore.pageModels.enumerated()), id: \.element.id) { index, page in
                     HStack {
                         VStack(alignment: .leading) {
-                            Text("Page \(index + 1)")
+                            Text(page.title)
                         }
                         Spacer()
                         if page.id == pageStore.activePageID {
@@ -137,57 +144,42 @@ private struct AddPageOptionsView: View {
     }
 
     private func insertPage() {
-        let controller = CanvasController()
-        let model = NotebookPageModel(title: "Page \(notebook.pages.count + 1)", paperStyle: notebook.paperStyle)
+        let model = NotebookPageModel(title: "Page \(pageStore.pageModels.count + 1)", paperStyle: notebook.paperStyle)
+        let controller = CanvasController(id: model.id)
+        let targetIndex = resolvedInsertionIndex()
 
-        switch location {
-
-        case .beforeCurrent:
-            guard let idx = currentIndex,
-                  idx >= 0,
-                  idx <= pageStore.pages.count,
-                  idx <= notebook.pages.count
-            else { return }
-
-            pageStore.pages.insert(controller, at: idx)
-            notebook.pages.insert(model, at: idx)
-            pageStore.activePageID = controller.id
-            retitlePages()
-
-        case .afterCurrent:
-            guard let idx = currentIndex else { return }
-
-            let insertIndex = min(idx + 1, pageStore.pages.count)
-
-            guard insertIndex <= notebook.pages.count else { return }
-
-            pageStore.pages.insert(controller, at: insertIndex)
-            notebook.pages.insert(model, at: insertIndex)
-            pageStore.activePageID = controller.id
-            retitlePages()
-
-        case .end:
-            pageStore.pages.append(controller)
-            notebook.pages.append(model)
-            pageStore.activePageID = controller.id
-            retitlePages()
-        }
-
-
-        pageStore.pages.append(controller)
-        notebook.pages.append(model)
-        pageStore.activePageID = controller.id
+        guard let insertionIndex = targetIndex else { return }
+        pageStore.insertPage(model, at: insertionIndex, controller: controller)
+        notebook.pages.insert(model, at: insertionIndex)
         retitlePages()
     }
 
     private var currentIndex: Int? {
         guard let id = pageStore.activePageID else { return nil }
-        return pageStore.pages.firstIndex(where: { $0.id == id })
+        return pageStore.pageModels.firstIndex(where: { $0.id == id })
+    }
+
+    private func resolvedInsertionIndex() -> Int? {
+        let totalPages = pageStore.pageModels.count
+
+        switch location {
+        case .beforeCurrent:
+            guard let idx = currentIndex else { return 0 }
+            return min(idx, totalPages)
+        case .afterCurrent:
+            guard let idx = currentIndex else { return totalPages }
+            return min(idx + 1, totalPages)
+        case .end:
+            return totalPages
+        }
     }
 
     private func retitlePages() {
-        for index in notebook.pages.indices {
-            notebook.pages[index].title = "Page \(index + 1)"
+        notebook.pages = notebook.pages.enumerated().map { index, page in
+            var updatedPage = page
+            updatedPage.title = "Page \(index + 1)"
+            return updatedPage
         }
+        pageStore.updateModels(notebook.pages)
     }
 }

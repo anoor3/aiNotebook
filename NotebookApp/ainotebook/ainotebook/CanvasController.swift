@@ -3,7 +3,7 @@ import PencilKit
 import UIKit
 
 final class CanvasController: ObservableObject {
-    let id = UUID()
+    let id: UUID
     let canvasView: PKCanvasView
 
     private static let allowedStrokeWidths: [CGFloat] = [1.8, 3.0, 4.4]
@@ -37,9 +37,11 @@ final class CanvasController: ObservableObject {
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
 
-    init(strokeColor: UIColor = UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0),
+    init(id: UUID = UUID(),
+         strokeColor: UIColor = UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0),
          strokeWidth: CGFloat = 3.2,
          useEraser: Bool = false) {
+        self.id = id
         let view = PKCanvasView()
         view.backgroundColor = .clear
         view.isOpaque = false

@@ -53,6 +53,7 @@ struct PencilCanvasView: UIViewRepresentable {
             if !controller.useEraser {
                 hostView?.finishEraserOverlay()
             }
+            controller.publishDrawingChange()
         }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {

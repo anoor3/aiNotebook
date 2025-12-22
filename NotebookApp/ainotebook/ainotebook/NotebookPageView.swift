@@ -357,16 +357,16 @@ struct NotebookPageView: View {
         }
     }
 
-private func requestAdditionalPage() {
+    private func requestAdditionalPage() {
         guard !isLoadingNextPage else { return }
         isLoadingNextPage = true
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            let newController = CanvasController(strokeColor: currentStrokeColor,
-                                                 strokeWidth: currentStrokeWidth,
-                                                 useEraser: isUsingEraser)
-            pageStore.pages.append(newController)
-            pageStore.activePageID = newController.id
+            _ = pageStore.addPage(title: "Page \(pageStore.pages.count + 1)",
+                                  paperStyle: paperStyle,
+                                  strokeColor: currentStrokeColor,
+                                  strokeWidth: currentStrokeWidth,
+                                  useEraser: isUsingEraser)
             isLoadingNextPage = false
         }
     }
@@ -580,7 +580,8 @@ struct ToolbarButtonStyle: ButtonStyle {
 
 struct NotebookPageView_Previews: PreviewProvider {
     static var previews: some View {
-        NotebookPageView(pageStore: NotebookPageStore(pages: [CanvasController()]))
+        NotebookPageView(pageStore: NotebookPageStore(notebookID: UUID(),
+                                                      pageModels: [NotebookPageModel(title: "Page 1")]))
             .previewInterfaceOrientation(.landscapeLeft)
             .previewDevice("iPad (10th generation)")
     }

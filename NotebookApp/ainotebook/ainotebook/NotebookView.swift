@@ -1,5 +1,4 @@
 import SwiftUI
-import PencilKit
 
 struct NotebookView: View {
     private static let palette: [UIColor] = [

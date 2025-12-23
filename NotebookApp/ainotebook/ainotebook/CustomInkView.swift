@@ -1,5 +1,4 @@
 import UIKit
-import PencilKit
 
 final class CustomInkView: UIView {
     private let renderQueue = DispatchQueue(label: "ink.render.queue", qos: .userInteractive)
@@ -23,7 +22,7 @@ final class CustomInkView: UIView {
         contentScaleFactor = currentScale
     }
 
-    func update(drawing: PKDrawing, scale: CGFloat) {
+    func update(drawing: InkDrawing, scale: CGFloat) {
         let strokes = drawing.strokes
         let boundsSize = bounds.size
         guard boundsSize.width > 0, boundsSize.height > 0 else { return }
@@ -49,7 +48,7 @@ final class CustomInkView: UIView {
         renderQueue.async(execute: newWorkItem)
     }
 
-    private func renderImage(for strokes: [PKStroke], size: CGSize, scale: CGFloat) -> CGImage? {
+    private func renderImage(for strokes: [InkStroke], size: CGSize, scale: CGFloat) -> CGImage? {
         let width = Int(size.width * scale)
         let height = Int(size.height * scale)
         guard width > 0, height > 0 else { return nil }
@@ -71,8 +70,8 @@ final class CustomInkView: UIView {
 
         for stroke in strokes {
             guard let path = makeSmoothedPath(from: stroke) else { continue }
-            let color = saturatedColor(from: stroke.ink.color)
-            context.setStrokeColor(color.cgColor)
+            context.setBlendMode(stroke.isEraser ? .clear : .normal)
+            context.setStrokeColor(stroke.isEraser ? UIColor.clear.cgColor : saturatedColor(from: stroke.color.uiColor).cgColor)
             context.setLineWidth(max(0.5, averageWidth(for: stroke)))
             context.addPath(path.cgPath)
             context.strokePath()
@@ -81,8 +80,8 @@ final class CustomInkView: UIView {
         return context.makeImage()
     }
 
-    private func makeSmoothedPath(from stroke: PKStroke) -> UIBezierPath? {
-        let points = Array(stroke.path)
+    private func makeSmoothedPath(from stroke: InkStroke) -> UIBezierPath? {
+        let points = stroke.points
         guard points.count > 1 else { return nil }
 
         let path = UIBezierPath()
@@ -91,7 +90,7 @@ final class CustomInkView: UIView {
 
         func point(at index: Int) -> CGPoint {
             let safeIndex = max(0, min(points.count - 1, index))
-            return points[safeIndex].location
+            return points[safeIndex].location.point
         }
 
         path.move(to: point(at: 0))
@@ -122,11 +121,10 @@ final class CustomInkView: UIView {
         return path
     }
 
-    private func averageWidth(for stroke: PKStroke) -> CGFloat {
-        let points = Array(stroke.path)
-        guard !points.isEmpty else { return 1.0 }
-        let total = points.reduce(CGFloat(0)) { $0 + $1.size.width }
-        return total / CGFloat(points.count)
+    private func averageWidth(for stroke: InkStroke) -> CGFloat {
+        guard !stroke.points.isEmpty else { return 1.0 }
+        let total = stroke.points.reduce(CGFloat(0)) { $0 + $1.width }
+        return total / CGFloat(stroke.points.count)
     }
 
     private func saturatedColor(from color: UIColor) -> UIColor {

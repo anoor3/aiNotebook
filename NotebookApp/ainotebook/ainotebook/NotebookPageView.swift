@@ -1,5 +1,4 @@
 import SwiftUI
-import PencilKit
 
 private struct PageVisibilityPreferenceKey: PreferenceKey {
     static var defaultValue: [UUID: CGFloat] = [:]

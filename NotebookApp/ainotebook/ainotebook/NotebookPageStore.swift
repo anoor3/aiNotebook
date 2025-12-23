@@ -1,5 +1,4 @@
 import SwiftUI
-import PencilKit
 import UIKit
 
 final class NotebookPageStore: ObservableObject {
@@ -71,7 +70,7 @@ final class NotebookPageStore: ObservableObject {
 
     private func configure(controller: CanvasController, with model: NotebookPageModel) {
         if let saved = DrawingPersistence.load(notebookID: notebookID, pageID: model.id) ??
-            (model.drawingData.flatMap { DrawingPersistence.decode(from: $0) }) {
+            (model.drawingData.flatMap { DrawingPersistence.decodeOrMigrate($0) }) {
             controller.setDrawing(saved)
             updateModel(for: model.id, drawingData: DrawingPersistence.encode(saved))
         }
@@ -81,7 +80,7 @@ final class NotebookPageStore: ObservableObject {
         }
     }
 
-    private func handleDrawingChange(_ drawing: PKDrawing, for pageID: UUID) {
+    private func handleDrawingChange(_ drawing: InkDrawing, for pageID: UUID) {
         let data = DrawingPersistence.encode(drawing)
         updateModel(for: pageID, drawingData: data)
         scheduleAutosave(drawing, for: pageID)
@@ -104,7 +103,7 @@ final class NotebookPageStore: ObservableObject {
         onModelsUpdated?(pageModels)
     }
 
-    private func scheduleAutosave(_ drawing: PKDrawing, for pageID: UUID) {
+    private func scheduleAutosave(_ drawing: InkDrawing, for pageID: UUID) {
         autosaveWorkItems[pageID]?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in

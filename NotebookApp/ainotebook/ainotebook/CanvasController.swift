@@ -1,13 +1,13 @@
 import SwiftUI
-import PencilKit
 import UIKit
 
 final class CanvasController: ObservableObject {
     let id: UUID
-    let canvasView: PKCanvasView
-    var onDrawingChanged: ((PKDrawing) -> Void)?
+    let canvasView: DrawingCanvasView
+    var onDrawingChanged: ((InkDrawing) -> Void)?
 
     private static let allowedStrokeWidths: [CGFloat] = [1.8, 3.0, 4.4]
+    private var undoManager = InkUndoManager()
 
     @Published var strokeColor: UIColor {
         didSet {
@@ -43,81 +43,57 @@ final class CanvasController: ObservableObject {
          strokeWidth: CGFloat = 3.2,
          useEraser: Bool = false) {
         self.id = id
-        let view = PKCanvasView()
-        view.backgroundColor = .clear
-        view.isOpaque = false
-        view.drawingPolicy = .pencilOnly
-        view.isRulerActive = false
-        view.isScrollEnabled = false
-        view.alwaysBounceVertical = false
-        view.alwaysBounceHorizontal = false
-        view.maximumZoomScale = 1.0
-        view.minimumZoomScale = 1.0
-        view.bouncesZoom = false
-        view.showsHorizontalScrollIndicator = false
-        view.showsVerticalScrollIndicator = false
-        view.allowsFingerDrawing = false
-        view.contentScaleFactor = UIScreen.main.scale
-        view.layer.contentsScale = UIScreen.main.scale
+        let view = DrawingCanvasView()
         canvasView = view
         self.strokeColor = CanvasController.opaqueColor(from: strokeColor)
         self.strokeWidth = CanvasController.nearestStrokeWidth(to: strokeWidth)
         self.useEraser = useEraser
+        configureCallbacks()
         applyCurrentTool()
+        setDrawing(.empty)
         updateUndoState()
     }
 
-    func currentDrawing() -> PKDrawing {
-        canvasView.drawing
+    func currentDrawingValue() -> InkDrawing {
+        undoManager.drawing
     }
 
-    func setDrawing(_ drawing: PKDrawing) {
-        canvasView.drawing = drawing
+    func setDrawing(_ drawing: InkDrawing) {
+        undoManager = InkUndoManager(drawing: drawing)
+        canvasView.setDrawing(drawing)
         updateUndoState()
     }
 
     func publishDrawingChange() {
-        let drawing = canvasView.drawing
-        onDrawingChanged?(drawing)
+        onDrawingChanged?(undoManager.drawing)
     }
 
     func applyCurrentTool() {
-        if useEraser {
-            canvasView.tool = PKEraserTool(.vector)
-        } else {
-            let color = CanvasController.opaqueColor(from: strokeColor)
-            canvasView.tool = PKInkingTool(.pen, color: color, width: strokeWidth)
-        }
+        let color = CanvasController.opaqueColor(from: strokeColor)
+        canvasView.setTool(color: color, width: strokeWidth, isEraser: useEraser)
     }
 
     func undo() {
-        canvasView.undoManager?.undo()
+        guard let updatedDrawing = undoManager.undo() else { return }
+        canvasView.setDrawing(updatedDrawing)
+        publishDrawingChange()
         updateUndoState()
     }
 
     func redo() {
-        canvasView.undoManager?.redo()
+        guard let updatedDrawing = undoManager.redo() else { return }
+        canvasView.setDrawing(updatedDrawing)
+        publishDrawingChange()
         updateUndoState()
     }
 
     func updateUndoState() {
-        canUndo = canvasView.undoManager?.canUndo ?? false
-        canRedo = canvasView.undoManager?.canRedo ?? false
+        canUndo = undoManager.canUndo
+        canRedo = undoManager.canRedo
     }
 
     func resetZoom(animated: Bool = true) {
-        canvasView.setZoomScale(1.0, animated: animated)
-        canvasView.panGestureRecognizer.minimumNumberOfTouches = 2
-    }
-
-    func disableScribbleInteraction() {
-        if #available(iOS 14.0, *) {
-            for interaction in canvasView.interactions {
-                if let scribble = interaction as? UIScribbleInteraction {
-                    canvasView.removeInteraction(scribble)
-                }
-            }
-        }
+        // Zoom is managed by ZoomableCanvasHostView.
     }
 
     private static func nearestStrokeWidth(to width: CGFloat) -> CGFloat {
@@ -136,5 +112,19 @@ final class CanvasController: ObservableObject {
             return UIColor(red: red, green: green, blue: blue, alpha: 1.0)
         }
         return color.withAlphaComponent(1.0)
+    }
+
+    private func configureCallbacks() {
+        canvasView.onStrokeCommitted = { [weak self] stroke in
+            self?.handleStrokeCommitted(stroke)
+        }
+    }
+
+    private func handleStrokeCommitted(_ stroke: InkStroke) {
+        undoManager.apply(.addStroke(stroke))
+        let updated = undoManager.drawing
+        canvasView.setDrawing(updated)
+        publishDrawingChange()
+        updateUndoState()
     }
 }

@@ -1,6 +1,6 @@
 # aiNotebook
 
-A SwiftUI + PencilKit iPad notebook that feels like paper, keeps your ideas organized, and now remembers your notebooks between sessions.
+A SwiftUI iPad notebook with a custom Pencil-like drawing engine that feels like paper, keeps your ideas organized, and now remembers your notebooks between sessions.
 
 ## What it does
 - **Digital ink that feels natural:** Pen/eraser tools, multiple stroke widths, and a custom color picker for quick sketching.
@@ -10,7 +10,7 @@ A SwiftUI + PencilKit iPad notebook that feels like paper, keeps your ideas orga
 
 ## How it’s structured
 - **SwiftUI UI:** `LibraryRootView` and `NotebookContainerView` drive navigation and notebook/page management.
-- **Drawing stack:** `NotebookPageView` hosts `PencilCanvasView`, which wraps a `PKCanvasView` and custom ink rendering for smooth strokes and eraser highlighting.
+- **Drawing stack:** `NotebookPageView` hosts `PencilCanvasView`, which wraps a fully custom `DrawingCanvasView` and ink renderer for smooth strokes, eraser highlighting, and zoom-aware scaling without PencilKit.
 - **Data model:** `Notebook` and `NotebookPageModel` track notebook metadata, pages, and drawing payloads.
 - **Persistence:** `DrawingPersistence` stores per-page drawings; `NotebookLibraryPersistence` saves the library’s notebooks as JSON in the app’s Documents directory.
 
@@ -20,5 +20,5 @@ A SwiftUI + PencilKit iPad notebook that feels like paper, keeps your ideas orga
 3. Create a notebook, pick a cover color and paper style, and start drawing. Your notebooks and pages will auto-save.
 
 ## Notes
-- The app targets iPadOS and uses PencilKit (Apple Pencil recommended).
+- The app targets iPadOS and is optimized for Apple Pencil but does not rely on PencilKit.
 - Autosave runs on a background queue; drawings persist per page, and library metadata persists across launches.

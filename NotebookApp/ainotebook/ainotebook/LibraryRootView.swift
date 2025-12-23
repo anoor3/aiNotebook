@@ -1,10 +1,11 @@
 import SwiftUI
 
 struct LibraryRootView: View {
-    @State private var notebooks: [Notebook] = Notebook.sampleData
+    @State private var notebooks: [Notebook] = []
     @State private var navigationPath: [Notebook.ID] = []
     @State private var showingNewNotebook = false
     @State private var renameNotebookID: Notebook.ID?
+    @State private var hasLoadedLibrary = false
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -40,6 +41,12 @@ struct LibraryRootView: View {
                 Text("Notebook missing")
             }
         }
+        .task {
+            loadLibraryIfNeeded()
+        }
+        .onChange(of: notebooks) { updated in
+            NotebookLibraryPersistence.save(updated)
+        }
     }
 
     private func binding(for id: Notebook.ID) -> Binding<Notebook>? {
@@ -65,6 +72,17 @@ struct LibraryRootView: View {
     private func toggleFavorite(_ notebook: Notebook) {
         guard let index = notebooks.firstIndex(where: { $0.id == notebook.id }) else { return }
         notebooks[index].isFavorite.toggle()
+    }
+
+    private func loadLibraryIfNeeded() {
+        guard !hasLoadedLibrary else { return }
+        hasLoadedLibrary = true
+
+        if let saved = NotebookLibraryPersistence.load() {
+            notebooks = saved
+        } else {
+            notebooks = Notebook.sampleData
+        }
     }
 }
 

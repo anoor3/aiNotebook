@@ -16,7 +16,7 @@ struct CodablePoint: Codable, Hashable {
     }
 }
 
-struct InkSample: Codable, Hashable {
+struct StrokePoint: Codable, Hashable {
     var location: CodablePoint
     var force: CGFloat
     var azimuth: CGFloat?
@@ -25,11 +25,18 @@ struct InkSample: Codable, Hashable {
     var width: CGFloat
 }
 
-struct InkStroke: Identifiable, Codable, Hashable {
-    var id: UUID
-    var points: [InkSample]
+struct InkStyle: Codable, Hashable {
     var color: CodableColor
     var isEraser: Bool
+    var baseWidth: CGFloat
+
+    var uiColor: UIColor { color.uiColor }
+}
+
+struct InkStroke: Identifiable, Codable, Hashable {
+    var id: UUID
+    var points: [StrokePoint]
+    var style: InkStyle
 }
 
 struct InkDrawing: Codable, Hashable {

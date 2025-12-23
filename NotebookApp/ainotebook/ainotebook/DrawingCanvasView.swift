@@ -18,7 +18,7 @@ final class DrawingCanvasView: UIView {
 
     private let inkView = CustomInkView()
     private let currentStrokeLayer = CAShapeLayer()
-    private var activeSamples: [InkSample] = []
+    private var activeSamples: [StrokePoint] = []
     private var isEraser = false
     private var strokeColor: UIColor = UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0)
     private var strokeWidth: CGFloat = 3.2
@@ -119,10 +119,12 @@ final class DrawingCanvasView: UIView {
             return
         }
 
+        let style = InkStyle(color: CodableColor(strokeColor),
+                             isEraser: isEraser,
+                             baseWidth: strokeWidth)
         let stroke = InkStroke(id: UUID(),
                                points: activeSamples,
-                               color: CodableColor(strokeColor),
-                               isEraser: isEraser)
+                               style: style)
         drawing.strokes.append(stroke)
         currentStrokeLayer.path = nil
         let finalPoint = activeSamples.last?.location.point ?? .zero
@@ -138,12 +140,12 @@ final class DrawingCanvasView: UIView {
         let location = touch.location(in: self)
         let force = normalizedForce(for: touch)
         let adjustedWidth = adjustedWidth(for: force)
-        let sample = InkSample(location: CodablePoint(location),
-                               force: force,
-                               azimuth: azimuth(from: touch),
-                               altitude: altitude(from: touch),
-                               timestamp: touch.timestamp,
-                               width: adjustedWidth)
+        let sample = StrokePoint(location: CodablePoint(location),
+                                 force: force,
+                                 azimuth: azimuth(from: touch),
+                                 altitude: altitude(from: touch),
+                                 timestamp: touch.timestamp,
+                                 width: adjustedWidth)
         activeSamples.append(sample)
     }
 
@@ -178,7 +180,7 @@ final class DrawingCanvasView: UIView {
         currentStrokeLayer.path = path.cgPath
     }
 
-    private func makeSmoothedPath(for samples: [InkSample]) -> UIBezierPath {
+    private func makeSmoothedPath(for samples: [StrokePoint]) -> UIBezierPath {
         let points = samples.map { $0.location.point }
         let path = UIBezierPath()
         path.lineCapStyle = .round

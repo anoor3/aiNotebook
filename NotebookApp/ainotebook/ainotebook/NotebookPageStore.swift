@@ -70,7 +70,7 @@ final class NotebookPageStore: ObservableObject {
 
     private func configure(controller: CanvasController, with model: NotebookPageModel) {
         if let saved = DrawingPersistence.load(notebookID: notebookID, pageID: model.id) ??
-            (model.drawingData.flatMap { DrawingPersistence.decode(from: $0) }) {
+            (model.drawingData.flatMap { DrawingPersistence.decodeOrMigrate($0) }) {
             controller.setDrawing(saved)
             updateModel(for: model.id, drawingData: DrawingPersistence.encode(saved))
         }

@@ -1,5 +1,4 @@
 import SwiftUI
-import PencilKit
 
 private struct PageVisibilityPreferenceKey: PreferenceKey {
     static var defaultValue: [UUID: CGFloat] = [:]
@@ -12,6 +11,9 @@ private struct PageVisibilityPreferenceKey: PreferenceKey {
 struct NotebookPageView: View {
     @ObservedObject var pageStore: NotebookPageStore
     var paperStyle: PaperStyle
+    var notebookTitle: String
+    var coverColor: Color
+    var coverID: UUID = UUID()
     private static let palette: [UIColor] = [
         UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0),
         UIColor(red: 0.16, green: 0.48, blue: 0.32, alpha: 1.0),
@@ -45,8 +47,15 @@ struct NotebookPageView: View {
     @State private var scrollProxy: ScrollViewProxy?
     @State private var isProgrammaticJump = false
 
-    init(paperStyle: PaperStyle = .grid, pageStore: NotebookPageStore) {
+    init(paperStyle: PaperStyle = .grid,
+         notebookTitle: String,
+         coverColor: Color,
+         pageStore: NotebookPageStore,
+         coverID: UUID = UUID()) {
         self.paperStyle = paperStyle
+        self.notebookTitle = notebookTitle
+        self.coverColor = coverColor
+        self.coverID = coverID
         self._pageStore = ObservedObject(wrappedValue: pageStore)
         let defaultColor = Self.palette[0]
         let defaultWidth = Self.thicknessOptions[1]
@@ -70,12 +79,15 @@ struct NotebookPageView: View {
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
                             LazyVStack(spacing: 40) {
-                                    ForEach(pageStore.pages, id: \.id) { controller in
-                                        notebookPage(for: controller,
-                                                     pageSize: pageSize,
-                                                     viewportHeight: viewportHeight)
-                                        .frame(maxWidth: .infinity)
-                                        .id(controller.id)
+                                coverPage(pageSize: pageSize)
+                                    .id(coverID)
+
+                                ForEach(pageStore.pages, id: \.id) { controller in
+                                    notebookPage(for: controller,
+                                                 pageSize: pageSize,
+                                                 viewportHeight: viewportHeight)
+                                    .frame(maxWidth: .infinity)
+                                    .id(controller.id)
                                 }
 
                                 addPagePrompt
@@ -308,6 +320,31 @@ struct NotebookPageView: View {
                                            value: [controller.id: distanceToCenter(for: proxy, viewportHeight: viewportHeight)])
                 }
             )
+    }
+
+    private func coverPage(pageSize: CGSize) -> some View {
+        VStack(alignment: .center, spacing: 12) {
+            Text("Notebook")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text(notebookTitle)
+                .font(.title.weight(.bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.25), in: Capsule())
+
+            Text("Page 1 • Cover")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.secondary)
+        }
+        .frame(width: pageSize.width, height: pageSize.height)
+        .background(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(coverColor)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 18, y: 8)
+        .padding(.horizontal, 4)
     }
 
     private func showPageIndicatorTemporary() {
@@ -580,7 +617,10 @@ struct ToolbarButtonStyle: ButtonStyle {
 
 struct NotebookPageView_Previews: PreviewProvider {
     static var previews: some View {
-        NotebookPageView(pageStore: NotebookPageStore(notebookID: UUID(),
+        NotebookPageView(paperStyle: .grid,
+                         notebookTitle: "Preview Notebook",
+                         coverColor: Color(red: 0.28, green: 0.4, blue: 0.9),
+                         pageStore: NotebookPageStore(notebookID: UUID(),
                                                       pageModels: [NotebookPageModel(title: "Page 1")]))
             .previewInterfaceOrientation(.landscapeLeft)
             .previewDevice("iPad (10th generation)")

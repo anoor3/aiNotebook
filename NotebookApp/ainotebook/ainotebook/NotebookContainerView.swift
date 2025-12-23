@@ -5,20 +5,32 @@ struct NotebookContainerView: View {
     @StateObject private var pageStore: NotebookPageStore
     @State private var showPagesSheet = false
     @State private var showAddPageSheet = false
+    @State private var coverID = UUID()
 
     init(notebook: Binding<Notebook>) {
         self._notebook = notebook
         let initialNotebook = notebook.wrappedValue
-        _pageStore = StateObject(wrappedValue: NotebookPageStore(notebook: initialNotebook) { updatedPages in
+        _pageStore = StateObject(wrappedValue: NotebookPageStore(notebookID: initialNotebook.id,
+                                                                 pageModels: initialNotebook.pages,
+                                                                 initialPageIndex: initialNotebook.currentPageIndex) { updatedPages in
             notebook.wrappedValue.pages = updatedPages
         })
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            NotebookPageView(paperStyle: notebook.paperStyle, pageStore: pageStore)
-                .navigationTitle(notebook.title)
-                .navigationBarTitleDisplayMode(.inline)
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+
+            ZStack(alignment: .topTrailing) {
+                NotebookPageView(paperStyle: notebook.paperStyle,
+                                 notebookTitle: notebook.title,
+                                 coverColor: notebook.coverColor,
+                                 pageStore: pageStore,
+                                 coverID: coverID)
+            }
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -48,12 +60,49 @@ struct NotebookContainerView: View {
                 showAddPageSheet = false
             }
         }
+        .onChange(of: pageStore.activePageID) { _ in
+            updateNotebookCurrentPageIndex()
+        }
+        .onAppear {
+            updateNotebookCurrentPageIndex()
+        }
     }
 
     private func addNewPage() {
         _ = pageStore.addPage(title: "Page \(pageStore.pages.count + 1)",
                               paperStyle: notebook.paperStyle)
         pageStore.retitlePages()
+    }
+
+    private func updateNotebookCurrentPageIndex() {
+        guard let activeID = pageStore.activePageID,
+              let idx = pageStore.pages.firstIndex(where: { $0.id == activeID }) else { return }
+        notebook.currentPageIndex = idx
+    }
+
+    private var header: some View {
+        HStack {
+            Text("Pages")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.secondary)
+
+            Spacer()
+
+            Text(notebook.title)
+                .font(.headline.weight(.semibold))
+
+            Spacer()
+
+            Text("Last opened \(formatted(date: notebook.lastOpened))")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func formatted(date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
     }
 }
 

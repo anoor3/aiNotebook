@@ -7,7 +7,7 @@ enum EraserOverlayEvent {
 }
 
 final class DrawingCanvasView: UIView {
-    var onDrawingChanged: ((InkDrawing) -> Void)?
+    var onStrokeCommitted: ((InkStroke) -> Void)?
     var onEraserOverlay: ((EraserOverlayEvent, CGPoint, CGFloat) -> Void)?
 
     private(set) var drawing: InkDrawing = .empty {
@@ -125,10 +125,9 @@ final class DrawingCanvasView: UIView {
         let stroke = InkStroke(id: UUID(),
                                points: activeSamples,
                                style: style)
-        drawing.strokes.append(stroke)
         currentStrokeLayer.path = nil
         let finalPoint = activeSamples.last?.location.point ?? .zero
-        onDrawingChanged?(drawing)
+        onStrokeCommitted?(stroke)
         activeSamples.removeAll()
 
         if isEraser {

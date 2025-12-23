@@ -7,9 +7,7 @@ final class CanvasController: ObservableObject {
     var onDrawingChanged: ((InkDrawing) -> Void)?
 
     private static let allowedStrokeWidths: [CGFloat] = [1.8, 3.0, 4.4]
-    private var currentDrawing: InkDrawing = .empty
-    private var undoStack: [InkDrawing] = []
-    private var redoStack: [InkDrawing] = []
+    private var undoManager = InkUndoManager()
 
     @Published var strokeColor: UIColor {
         didSet {
@@ -52,23 +50,22 @@ final class CanvasController: ObservableObject {
         self.useEraser = useEraser
         configureCallbacks()
         applyCurrentTool()
+        setDrawing(.empty)
         updateUndoState()
     }
 
     func currentDrawingValue() -> InkDrawing {
-        currentDrawing
+        undoManager.drawing
     }
 
     func setDrawing(_ drawing: InkDrawing) {
-        currentDrawing = drawing
+        undoManager = InkUndoManager(drawing: drawing)
         canvasView.setDrawing(drawing)
-        undoStack.removeAll()
-        redoStack.removeAll()
         updateUndoState()
     }
 
     func publishDrawingChange() {
-        onDrawingChanged?(currentDrawing)
+        onDrawingChanged?(undoManager.drawing)
     }
 
     func applyCurrentTool() {
@@ -77,24 +74,22 @@ final class CanvasController: ObservableObject {
     }
 
     func undo() {
-        guard let previous = undoStack.popLast() else { return }
-        redoStack.append(currentDrawing)
-        currentDrawing = previous
+        guard let updatedDrawing = undoManager.undo() else { return }
+        canvasView.setDrawing(updatedDrawing)
         publishDrawingChange()
         updateUndoState()
     }
 
     func redo() {
-        guard let next = redoStack.popLast() else { return }
-        undoStack.append(currentDrawing)
-        currentDrawing = next
+        guard let updatedDrawing = undoManager.redo() else { return }
+        canvasView.setDrawing(updatedDrawing)
         publishDrawingChange()
         updateUndoState()
     }
 
     func updateUndoState() {
-        canUndo = !undoStack.isEmpty
-        canRedo = !redoStack.isEmpty
+        canUndo = undoManager.canUndo
+        canRedo = undoManager.canRedo
     }
 
     func resetZoom(animated: Bool = true) {
@@ -120,14 +115,16 @@ final class CanvasController: ObservableObject {
     }
 
     private func configureCallbacks() {
-        canvasView.onDrawingChanged = { [weak self] drawing in
-            guard let self else { return }
-            self.undoStack.append(self.currentDrawing)
-            self.currentDrawing = drawing
-            self.canvasView.setDrawing(drawing)
-            self.redoStack.removeAll()
-            self.publishDrawingChange()
-            self.updateUndoState()
+        canvasView.onStrokeCommitted = { [weak self] stroke in
+            self?.handleStrokeCommitted(stroke)
         }
+    }
+
+    private func handleStrokeCommitted(_ stroke: InkStroke) {
+        undoManager.apply(.addStroke(stroke))
+        let updated = undoManager.drawing
+        canvasView.setDrawing(updated)
+        publishDrawingChange()
+        updateUndoState()
     }
 }

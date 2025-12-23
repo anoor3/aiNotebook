@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 final class NotebookPageStore: ObservableObject {
     @Published var pages: [CanvasController]
@@ -11,6 +12,7 @@ final class NotebookPageStore: ObservableObject {
     private var autosaveWorkItems: [UUID: DispatchWorkItem] = [:]
     private let autosaveQueue = DispatchQueue(label: "NotebookPageStore.autosave")
     private let onModelsUpdated: (([NotebookPageModel]) -> Void)?
+    private var controllerCancellables: [UUID: AnyCancellable] = [:]
 
     init(notebookID: UUID, pageModels: [NotebookPageModel], onModelsUpdated: (([NotebookPageModel]) -> Void)? = nil) {
         self.notebookID = notebookID
@@ -77,6 +79,10 @@ final class NotebookPageStore: ObservableObject {
 
         controller.onDrawingChanged = { [weak self] drawing in
             self?.handleDrawingChange(drawing, for: model.id)
+        }
+
+        controllerCancellables[controller.id] = controller.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
         }
     }
 

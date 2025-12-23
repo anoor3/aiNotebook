@@ -1,16 +1,19 @@
 import Foundation
-import PencilKit
 
 enum DrawingPersistence {
-    static func encode(_ drawing: PKDrawing) -> Data {
-        drawing.dataRepresentation()
+    static func encode(_ drawing: InkDrawing) -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return (try? encoder.encode(drawing)) ?? Data()
     }
 
-    static func decode(from data: Data) -> PKDrawing? {
-        try? PKDrawing(data: data)
+    static func decode(from data: Data) -> InkDrawing? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(InkDrawing.self, from: data)
     }
 
-    static func save(_ drawing: PKDrawing, notebookID: UUID, pageID: UUID) {
+    static func save(_ drawing: InkDrawing, notebookID: UUID, pageID: UUID) {
         let data = encode(drawing)
         let url = drawingURL(notebookID: notebookID, pageID: pageID)
 
@@ -23,7 +26,7 @@ enum DrawingPersistence {
         }
     }
 
-    static func load(notebookID: UUID, pageID: UUID) -> PKDrawing? {
+    static func load(notebookID: UUID, pageID: UUID) -> InkDrawing? {
         let url = drawingURL(notebookID: notebookID, pageID: pageID)
         guard let data = try? Data(contentsOf: url) else { return nil }
         return decode(from: data)

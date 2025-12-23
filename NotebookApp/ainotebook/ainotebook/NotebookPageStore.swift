@@ -1,6 +1,6 @@
 import SwiftUI
-import PencilKit
 import UIKit
+import Combine
 
 final class NotebookPageStore: ObservableObject {
     @Published var pages: [CanvasController]
@@ -12,6 +12,7 @@ final class NotebookPageStore: ObservableObject {
     private var autosaveWorkItems: [UUID: DispatchWorkItem] = [:]
     private let autosaveQueue = DispatchQueue(label: "NotebookPageStore.autosave")
     private let onModelsUpdated: (([NotebookPageModel]) -> Void)?
+    private var controllerCancellables: [UUID: AnyCancellable] = [:]
 
     init(notebookID: UUID, pageModels: [NotebookPageModel], onModelsUpdated: (([NotebookPageModel]) -> Void)? = nil) {
         self.notebookID = notebookID
@@ -71,7 +72,7 @@ final class NotebookPageStore: ObservableObject {
 
     private func configure(controller: CanvasController, with model: NotebookPageModel) {
         if let saved = DrawingPersistence.load(notebookID: notebookID, pageID: model.id) ??
-            (model.drawingData.flatMap { DrawingPersistence.decode(from: $0) }) {
+            (model.drawingData.flatMap { DrawingPersistence.decodeOrMigrate($0) }) {
             controller.setDrawing(saved)
             updateModel(for: model.id, drawingData: DrawingPersistence.encode(saved))
         }
@@ -79,9 +80,13 @@ final class NotebookPageStore: ObservableObject {
         controller.onDrawingChanged = { [weak self] drawing in
             self?.handleDrawingChange(drawing, for: model.id)
         }
+
+        controllerCancellables[controller.id] = controller.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
-    private func handleDrawingChange(_ drawing: PKDrawing, for pageID: UUID) {
+    private func handleDrawingChange(_ drawing: InkDrawing, for pageID: UUID) {
         let data = DrawingPersistence.encode(drawing)
         updateModel(for: pageID, drawingData: data)
         scheduleAutosave(drawing, for: pageID)
@@ -104,7 +109,7 @@ final class NotebookPageStore: ObservableObject {
         onModelsUpdated?(pageModels)
     }
 
-    private func scheduleAutosave(_ drawing: PKDrawing, for pageID: UUID) {
+    private func scheduleAutosave(_ drawing: InkDrawing, for pageID: UUID) {
         autosaveWorkItems[pageID]?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in

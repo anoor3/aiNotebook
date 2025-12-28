@@ -9,6 +9,7 @@ enum EraserOverlayEvent {
 final class DrawingCanvasView: UIView {
     var onStrokeCommitted: ((InkStroke) -> Void)?
     var onEraserOverlay: ((EraserOverlayEvent, CGPoint, CGFloat) -> Void)?
+    var onAttachmentsChanged: (([PageImageAttachment]) -> Void)?
 
     private(set) var drawing: InkDrawing = .empty {
         didSet {
@@ -16,6 +17,8 @@ final class DrawingCanvasView: UIView {
         }
     }
 
+    private var attachments: [PageImageAttachment] = []
+    private let attachmentsView = AttachmentContainerView()
     private let inkView = CustomInkView()
     private let currentStrokeLayer = CAShapeLayer()
     private var activeSamples: [StrokePoint] = []
@@ -38,6 +41,14 @@ final class DrawingCanvasView: UIView {
         isOpaque = false
         backgroundColor = .clear
         isMultipleTouchEnabled = true
+        isExclusiveTouch = false
+
+        attachmentsView.translatesAutoresizingMaskIntoConstraints = false
+        attachmentsView.onAttachmentsUpdated = { [weak self] updated in
+            self?.attachments = updated
+            self?.onAttachmentsChanged?(updated)
+        }
+        addSubview(attachmentsView)
 
         inkView.translatesAutoresizingMaskIntoConstraints = false
         inkView.isUserInteractionEnabled = false
@@ -45,6 +56,10 @@ final class DrawingCanvasView: UIView {
         addSubview(inkView)
 
         NSLayoutConstraint.activate([
+            attachmentsView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            attachmentsView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            attachmentsView.topAnchor.constraint(equalTo: topAnchor),
+            attachmentsView.bottomAnchor.constraint(equalTo: bottomAnchor),
             inkView.leadingAnchor.constraint(equalTo: leadingAnchor),
             inkView.trailingAnchor.constraint(equalTo: trailingAnchor),
             inkView.topAnchor.constraint(equalTo: topAnchor),
@@ -61,6 +76,11 @@ final class DrawingCanvasView: UIView {
 
     func setDrawing(_ drawing: InkDrawing) {
         self.drawing = drawing
+    }
+
+    func setAttachments(_ attachments: [PageImageAttachment]) {
+        self.attachments = attachments
+        attachmentsView.update(attachments: attachments)
     }
 
     func setTool(color: UIColor, width: CGFloat, isEraser: Bool) {
@@ -81,7 +101,7 @@ final class DrawingCanvasView: UIView {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first else { return }
+        guard let touch = touches.first, touch.type == .pencil else { return }
         activeSamples = []
         appendSample(from: touch)
         updatePreviewPath()
@@ -92,7 +112,7 @@ final class DrawingCanvasView: UIView {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first else { return }
+        guard let touch = touches.first, touch.type == .pencil else { return }
         appendSample(from: touch)
         updatePreviewPath()
 
@@ -102,11 +122,13 @@ final class DrawingCanvasView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        finalizeStroke(lastTouch: touches.first)
+        guard let touch = touches.first, touch.type == .pencil else { return }
+        finalizeStroke(lastTouch: touch)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        finalizeStroke(lastTouch: touches.first)
+        guard let touch = touches.first, touch.type == .pencil else { return }
+        finalizeStroke(lastTouch: touch)
     }
 
     private func finalizeStroke(lastTouch: UITouch?) {
@@ -179,6 +201,20 @@ final class DrawingCanvasView: UIView {
         currentStrokeLayer.path = path.cgPath
     }
 
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if let touch = event?.allTouches?.first {
+            if touch.type == .pencil {
+                return self
+            } else {
+                let converted = attachmentsView.convert(point, from: self)
+                if let target = attachmentsView.hitTest(converted, with: event) {
+                    return target
+                }
+            }
+        }
+        return super.hitTest(point, with: event)
+    }
+
     private func makeSmoothedPath(for samples: [StrokePoint]) -> UIBezierPath {
         let points = samples.map { $0.location.point }
         let path = UIBezierPath()
@@ -224,5 +260,142 @@ final class DrawingCanvasView: UIView {
         }
 
         return path
+    }
+}
+
+final class AttachmentContainerView: UIView {
+    var onAttachmentsUpdated: (([PageImageAttachment]) -> Void)?
+
+    private var attachmentViews: [UUID: AttachmentImageView] = [:]
+    private var attachments: [PageImageAttachment] = []
+
+    func update(attachments: [PageImageAttachment]) {
+        self.attachments = attachments
+        let ids = Set(attachments.map { $0.id })
+
+        // Remove missing views
+        for (id, view) in attachmentViews where !ids.contains(id) {
+            view.removeFromSuperview()
+            attachmentViews.removeValue(forKey: id)
+        }
+
+        // Add or update
+        for attachment in attachments {
+            let view: AttachmentImageView
+            if let existing = attachmentViews[attachment.id] {
+                view = existing
+            } else {
+                view = AttachmentImageView(attachment: attachment)
+                view.onUpdate = { [weak self] updated in
+                    self?.applyUpdate(updated)
+                }
+                addSubview(view)
+                attachmentViews[attachment.id] = view
+            }
+            view.apply(attachment: attachment)
+        }
+    }
+
+    private func applyUpdate(_ attachment: PageImageAttachment) {
+        guard let index = attachments.firstIndex(where: { $0.id == attachment.id }) else { return }
+        attachments[index] = attachment
+        onAttachmentsUpdated?(attachments)
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard let target = super.hitTest(point, with: event) else { return nil }
+        return target === self ? nil : target
+    }
+}
+
+final class AttachmentImageView: UIView, UIGestureRecognizerDelegate {
+    var onUpdate: ((PageImageAttachment) -> Void)?
+
+    private var attachment: PageImageAttachment
+    private let imageView = UIImageView()
+
+    init(attachment: PageImageAttachment) {
+        self.attachment = attachment
+        super.init(frame: .zero)
+        configure()
+        apply(attachment: attachment)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func apply(attachment: PageImageAttachment) {
+        self.attachment = attachment
+        if let image = UIImage(data: attachment.imageData) {
+            imageView.image = image
+        }
+        let size = attachment.size.size
+        bounds = CGRect(origin: .zero, size: size)
+        center = attachment.position.point
+        transform = CGAffineTransform(rotationAngle: CGFloat(attachment.rotation))
+    }
+
+    private func configure() {
+        clipsToBounds = true
+        layer.cornerRadius = 6
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.contentMode = .scaleAspectFill
+        addSubview(imageView)
+        NSLayoutConstraint.activate([
+            imageView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        let rotate = UIRotationGestureRecognizer(target: self, action: #selector(handleRotate(_:)))
+        [pan, pinch, rotate].forEach { gesture in
+            gesture.delegate = self
+            gesture.cancelsTouchesInView = false
+            gesture.delaysTouchesBegan = false
+            addGestureRecognizer(gesture)
+        }
+    }
+
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        let translation = gesture.translation(in: superview)
+        center = CGPoint(x: center.x + translation.x, y: center.y + translation.y)
+        gesture.setTranslation(.zero, in: superview)
+        if gesture.state == .ended || gesture.state == .cancelled {
+            commitUpdate()
+        }
+    }
+
+    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+        let scale = gesture.scale
+        bounds.size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        gesture.scale = 1.0
+        if gesture.state == .ended || gesture.state == .cancelled {
+            commitUpdate()
+        }
+    }
+
+    @objc private func handleRotate(_ gesture: UIRotationGestureRecognizer) {
+        transform = transform.rotated(by: gesture.rotation)
+        gesture.rotation = 0
+        if gesture.state == .ended || gesture.state == .cancelled {
+            commitUpdate()
+        }
+    }
+
+    private func commitUpdate() {
+        let newAttachment = PageImageAttachment(id: attachment.id,
+                                                imageData: attachment.imageData,
+                                                position: CodablePoint(center),
+                                                size: CodableSize(width: bounds.width, height: bounds.height),
+                                                rotation: Double(atan2(Double(transform.b), Double(transform.a))))
+        onUpdate?(newAttachment)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        touch.type != .pencil
     }
 }

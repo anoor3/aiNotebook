@@ -31,6 +31,10 @@ final class NotebookPageStore: ObservableObject {
         self.init(notebookID: notebook.id, pageModels: notebook.pages, onModelsUpdated: onModelsUpdated)
     }
 
+    var notebookIdentifier: UUID {
+        notebookID
+    }
+
     func controller(for id: UUID?) -> CanvasController? {
         guard let id = id else { return pages.first }
         return pages.first(where: { $0.id == id }) ?? pages.first
@@ -77,8 +81,19 @@ final class NotebookPageStore: ObservableObject {
             updateModel(for: model.id, drawingData: DrawingPersistence.encode(saved))
         }
 
+        controller.setImageAttachments(model.imageAttachments)
+        controller.setVoiceNotes(model.voiceNotes)
+
         controller.onDrawingChanged = { [weak self] drawing in
             self?.handleDrawingChange(drawing, for: model.id)
+        }
+
+        controller.onImageAttachmentsChanged = { [weak self] attachments in
+            self?.handleImageChange(attachments, for: model.id)
+        }
+
+        controller.onVoiceNotesChanged = { [weak self] notes in
+            self?.handleVoiceNotesChange(notes, for: model.id)
         }
 
         controllerCancellables[controller.id] = controller.objectWillChange.sink { [weak self] _ in
@@ -90,6 +105,18 @@ final class NotebookPageStore: ObservableObject {
         let data = DrawingPersistence.encode(drawing)
         updateModel(for: pageID, drawingData: data)
         scheduleAutosave(drawing, for: pageID)
+    }
+
+    private func handleImageChange(_ attachments: [PageImageAttachment], for pageID: UUID) {
+        guard let index = pageModels.firstIndex(where: { $0.id == pageID }) else { return }
+        pageModels[index].imageAttachments = attachments
+        notifyModelUpdate()
+    }
+
+    private func handleVoiceNotesChange(_ notes: [VoiceNote], for pageID: UUID) {
+        guard let index = pageModels.firstIndex(where: { $0.id == pageID }) else { return }
+        pageModels[index].voiceNotes = notes
+        notifyModelUpdate()
     }
 
     private func updateModel(for pageID: UUID, drawingData: Data) {

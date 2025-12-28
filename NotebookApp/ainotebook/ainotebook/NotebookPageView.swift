@@ -159,6 +159,10 @@ struct NotebookPageView: View {
                            onClose: { showVoiceNotes = false },
                            onPlay: { note in playVoiceNote(note) })
         }
+        .onChange(of: activePageController?.imageAttachments ?? []) { _ in
+            // ensure selection resets when switching pages
+            eraserMode = activePageController?.eraserMode ?? .stroke
+        }
         .onChange(of: pageStore.activePageID) { id in
             guard let id = id else { return }
             isProgrammaticJump = true
@@ -516,8 +520,10 @@ struct NotebookPageView: View {
                         AVNumberOfChannelsKey: 1,
                         AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
                     ]
-                    self.audioRecorder = try AVAudioRecorder(url: url, settings: settings)
-                    self.audioRecorder?.record()
+                    let recorder = try AVAudioRecorder(url: url, settings: settings)
+                    recorder.prepareToRecord()
+                    recorder.record()
+                    self.audioRecorder = recorder
                     self.isRecording = true
                 } catch {
                     self.audioRecorder = nil
@@ -530,6 +536,7 @@ struct NotebookPageView: View {
     private func stopRecording() {
         guard let recorder = audioRecorder, let controller = activePageController else { return }
         recorder.stop()
+        recorder.prepareToPlay()
         let duration = recorder.currentTime
         let fileURL = recorder.url
         audioRecorder = nil

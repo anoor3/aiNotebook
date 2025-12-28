@@ -203,6 +203,8 @@ final class ZoomableCanvasHostView: UIView {
         scrollView.panGestureRecognizer.minimumNumberOfTouches = 2
         scrollView.contentInsetAdjustmentBehavior = .never
         scrollView.isExclusiveTouch = false
+        scrollView.panGestureRecognizer.delegate = scrollView
+        scrollView.pinchGestureRecognizer?.delegate = scrollView
 
         addSubview(scrollView)
         scrollView.addSubview(contentView)
@@ -267,9 +269,13 @@ final class ZoomableCanvasHostView: UIView {
     }
 }
 
-final class CanvasScrollView: UIScrollView {
+final class CanvasScrollView: UIScrollView, UIGestureRecognizerDelegate {
     override func touchesShouldCancel(in view: UIView) -> Bool {
         true
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        touch.type != .pencil
     }
 }
 

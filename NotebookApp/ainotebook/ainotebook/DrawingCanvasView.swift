@@ -265,9 +265,12 @@ final class DrawingCanvasView: UIView {
 
 final class AttachmentContainerView: UIView {
     var onAttachmentsUpdated: (([PageImageAttachment]) -> Void)?
+    var onDeleteAttachment: ((UUID) -> Void)?
+    var onSelectionChanged: ((UUID?) -> Void)?
 
     private var attachmentViews: [UUID: AttachmentImageView] = [:]
     private var attachments: [PageImageAttachment] = []
+    private var selectedAttachmentID: UUID?
 
     func update(attachments: [PageImageAttachment]) {
         self.attachments = attachments
@@ -289,11 +292,29 @@ final class AttachmentContainerView: UIView {
                 view.onUpdate = { [weak self] updated in
                     self?.applyUpdate(updated)
                 }
+                view.onSelect = { [weak self] id in
+                    self?.selectAttachment(id)
+                }
+                view.onDelete = { [weak self] id in
+                    self?.deleteAttachment(id)
+                }
                 addSubview(view)
                 attachmentViews[attachment.id] = view
             }
             view.apply(attachment: attachment)
+            view.setSelected(attachment.id == selectedAttachmentID)
         }
+
+        if let selected = selectedAttachmentID, !ids.contains(selected) {
+            selectedAttachmentID = nil
+            onSelectionChanged?(nil)
+        } else if selectedAttachmentID == nil, let last = attachments.last?.id {
+            selectAttachment(last)
+        }
+
+        let clearTap = UITapGestureRecognizer(target: self, action: #selector(handleBackgroundTap))
+        clearTap.cancelsTouchesInView = false
+        addGestureRecognizer(clearTap)
     }
 
     private func applyUpdate(_ attachment: PageImageAttachment) {
@@ -302,17 +323,45 @@ final class AttachmentContainerView: UIView {
         onAttachmentsUpdated?(attachments)
     }
 
+    private func deleteAttachment(_ id: UUID) {
+        attachments.removeAll { $0.id == id }
+        attachmentViews[id]?.removeFromSuperview()
+        attachmentViews.removeValue(forKey: id)
+        if selectedAttachmentID == id {
+            selectedAttachmentID = nil
+            onSelectionChanged?(nil)
+        }
+        onDeleteAttachment?(id)
+        onAttachmentsUpdated?(attachments)
+    }
+
+    private func selectAttachment(_ id: UUID?) {
+        selectedAttachmentID = id
+        for (attachmentID, view) in attachmentViews {
+            view.setSelected(attachmentID == id)
+        }
+        onSelectionChanged?(id)
+    }
+
+    @objc private func handleBackgroundTap(_ gesture: UITapGestureRecognizer) {
+        selectAttachment(nil)
+    }
+
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard let target = super.hitTest(point, with: event) else { return nil }
         return target === self ? nil : target
     }
 }
 
-final class AttachmentImageView: UIView, UIGestureRecognizerDelegate {
+final class AttachmentImageView: UIView, UIGestureRecognizerDelegate, UIContextMenuInteractionDelegate {
     var onUpdate: ((PageImageAttachment) -> Void)?
+    var onSelect: ((UUID) -> Void)?
+    var onDelete: ((UUID) -> Void)?
 
     private var attachment: PageImageAttachment
     private let imageView = UIImageView()
+    private let borderLayer = CAShapeLayer()
+    private let cornerLayer = CAShapeLayer()
 
     init(attachment: PageImageAttachment) {
         self.attachment = attachment
@@ -334,11 +383,14 @@ final class AttachmentImageView: UIView, UIGestureRecognizerDelegate {
         bounds = CGRect(origin: .zero, size: size)
         center = attachment.position.point
         transform = CGAffineTransform(rotationAngle: CGFloat(attachment.rotation))
+        updateSelectionVisuals()
     }
 
     private func configure() {
         clipsToBounds = true
         layer.cornerRadius = 6
+        layer.addSublayer(borderLayer)
+        layer.addSublayer(cornerLayer)
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.contentMode = .scaleAspectFill
         addSubview(imageView)
@@ -352,12 +404,19 @@ final class AttachmentImageView: UIView, UIGestureRecognizerDelegate {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
         let rotate = UIRotationGestureRecognizer(target: self, action: #selector(handleRotate(_:)))
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleSelect))
         [pan, pinch, rotate].forEach { gesture in
             gesture.delegate = self
             gesture.cancelsTouchesInView = false
             gesture.delaysTouchesBegan = false
             addGestureRecognizer(gesture)
         }
+        addGestureRecognizer(tap)
+
+        let menuInteraction = UIContextMenuInteraction(delegate: self)
+        addInteraction(menuInteraction)
+
+        updateSelectionVisuals()
     }
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -397,5 +456,54 @@ final class AttachmentImageView: UIView, UIGestureRecognizerDelegate {
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         touch.type != .pencil
+    }
+
+    @objc private func handleSelect() {
+        onSelect?(attachment.id)
+        updateSelectionVisuals()
+    }
+
+    func setSelected(_ isSelected: Bool) {
+        borderLayer.isHidden = !isSelected
+        cornerLayer.isHidden = !isSelected
+    }
+
+    private func updateSelectionVisuals() {
+        borderLayer.frame = bounds
+        borderLayer.path = UIBezierPath(roundedRect: bounds, cornerRadius: 8).cgPath
+        borderLayer.strokeColor = UIColor.systemBlue.cgColor
+        borderLayer.fillColor = UIColor.clear.cgColor
+        borderLayer.lineWidth = 2
+
+        let cornerPath = UIBezierPath()
+        let cornerSize: CGFloat = 8
+        let inset: CGFloat = 4
+        let points = [
+            CGPoint(x: inset, y: inset),
+            CGPoint(x: bounds.width - inset, y: inset),
+            CGPoint(x: inset, y: bounds.height - inset),
+            CGPoint(x: bounds.width - inset, y: bounds.height - inset)
+        ]
+        for p in points {
+            cornerPath.move(to: CGPoint(x: p.x - cornerSize / 2, y: p.y))
+            cornerPath.addLine(to: CGPoint(x: p.x + cornerSize / 2, y: p.y))
+            cornerPath.move(to: CGPoint(x: p.x, y: p.y - cornerSize / 2))
+            cornerPath.addLine(to: CGPoint(x: p.x, y: p.y + cornerSize / 2))
+        }
+        cornerLayer.frame = bounds
+        cornerLayer.path = cornerPath.cgPath
+        cornerLayer.strokeColor = UIColor.systemBlue.cgColor
+        cornerLayer.lineWidth = 2
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+        UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            UIMenu(children: [
+                UIAction(title: "Delete", attributes: .destructive) { [weak self] _ in
+                    guard let id = self?.attachment.id else { return }
+                    self?.onDelete?(id)
+                }
+            ])
+        }
     }
 }

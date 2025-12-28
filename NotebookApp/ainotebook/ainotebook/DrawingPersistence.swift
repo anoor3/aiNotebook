@@ -105,6 +105,28 @@ enum DrawingPersistence {
             .appendingPathComponent("\(pageID.uuidString).drawing")
     }
 
+    static func voiceNoteURL(notebookID: UUID, pageID: UUID, noteID: UUID) -> URL {
+        let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base
+            .appendingPathComponent("VoiceNotes", isDirectory: true)
+            .appendingPathComponent(notebookID.uuidString, isDirectory: true)
+            .appendingPathComponent(pageID.uuidString, isDirectory: true)
+            .appendingPathComponent("\(noteID.uuidString).m4a")
+    }
+
+    static func existingVoiceNoteURL(fileName: String, notebookID: UUID, pageID: UUID?) -> URL? {
+        guard let pageID else { return nil }
+        let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let url = base
+            .appendingPathComponent("VoiceNotes", isDirectory: true)
+            .appendingPathComponent(notebookID.uuidString, isDirectory: true)
+            .appendingPathComponent(pageID.uuidString, isDirectory: true)
+            .appendingPathComponent(fileName)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
     private static func legacyDrawingURL(notebookID: UUID, pageID: UUID) -> URL {
         drawingURL(notebookID: notebookID, pageID: pageID)
     }

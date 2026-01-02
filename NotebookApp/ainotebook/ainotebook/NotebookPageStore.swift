@@ -1,6 +1,6 @@
 import SwiftUI
-import PencilKit
 import UIKit
+import Combine
 
 final class NotebookPageStore: ObservableObject {
     @Published var pages: [CanvasController]
@@ -12,6 +12,7 @@ final class NotebookPageStore: ObservableObject {
     private var autosaveWorkItems: [UUID: DispatchWorkItem] = [:]
     private let autosaveQueue = DispatchQueue(label: "NotebookPageStore.autosave")
     private let onModelsUpdated: (([NotebookPageModel]) -> Void)?
+    private var controllerCancellables: [UUID: AnyCancellable] = [:]
 
     init(notebookID: UUID, pageModels: [NotebookPageModel], onModelsUpdated: (([NotebookPageModel]) -> Void)? = nil) {
         self.notebookID = notebookID
@@ -28,6 +29,10 @@ final class NotebookPageStore: ObservableObject {
 
     convenience init(notebook: Notebook, onModelsUpdated: (([NotebookPageModel]) -> Void)? = nil) {
         self.init(notebookID: notebook.id, pageModels: notebook.pages, onModelsUpdated: onModelsUpdated)
+    }
+
+    var notebookIdentifier: UUID {
+        notebookID
     }
 
     func controller(for id: UUID?) -> CanvasController? {
@@ -71,20 +76,47 @@ final class NotebookPageStore: ObservableObject {
 
     private func configure(controller: CanvasController, with model: NotebookPageModel) {
         if let saved = DrawingPersistence.load(notebookID: notebookID, pageID: model.id) ??
-            (model.drawingData.flatMap { DrawingPersistence.decode(from: $0) }) {
+            (model.drawingData.flatMap { DrawingPersistence.decodeOrMigrate($0) }) {
             controller.setDrawing(saved)
             updateModel(for: model.id, drawingData: DrawingPersistence.encode(saved))
         }
 
+        controller.setImageAttachments(model.imageAttachments)
+        controller.setVoiceNotes(model.voiceNotes)
+
         controller.onDrawingChanged = { [weak self] drawing in
             self?.handleDrawingChange(drawing, for: model.id)
         }
+
+        controller.onImageAttachmentsChanged = { [weak self] attachments in
+            self?.handleImageChange(attachments, for: model.id)
+        }
+
+        controller.onVoiceNotesChanged = { [weak self] notes in
+            self?.handleVoiceNotesChange(notes, for: model.id)
+        }
+
+        controllerCancellables[controller.id] = controller.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
-    private func handleDrawingChange(_ drawing: PKDrawing, for pageID: UUID) {
+    private func handleDrawingChange(_ drawing: InkDrawing, for pageID: UUID) {
         let data = DrawingPersistence.encode(drawing)
         updateModel(for: pageID, drawingData: data)
         scheduleAutosave(drawing, for: pageID)
+    }
+
+    private func handleImageChange(_ attachments: [PageImageAttachment], for pageID: UUID) {
+        guard let index = pageModels.firstIndex(where: { $0.id == pageID }) else { return }
+        pageModels[index].imageAttachments = attachments
+        notifyModelUpdate()
+    }
+
+    private func handleVoiceNotesChange(_ notes: [VoiceNote], for pageID: UUID) {
+        guard let index = pageModels.firstIndex(where: { $0.id == pageID }) else { return }
+        pageModels[index].voiceNotes = notes
+        notifyModelUpdate()
     }
 
     private func updateModel(for pageID: UUID, drawingData: Data) {
@@ -104,7 +136,7 @@ final class NotebookPageStore: ObservableObject {
         onModelsUpdated?(pageModels)
     }
 
-    private func scheduleAutosave(_ drawing: PKDrawing, for pageID: UUID) {
+    private func scheduleAutosave(_ drawing: InkDrawing, for pageID: UUID) {
         autosaveWorkItems[pageID]?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in

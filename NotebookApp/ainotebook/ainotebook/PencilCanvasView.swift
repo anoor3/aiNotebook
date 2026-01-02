@@ -1,5 +1,4 @@
 import SwiftUI
-import PencilKit
 
 struct PencilCanvasView: UIViewRepresentable {
     @ObservedObject var controller: CanvasController
@@ -7,8 +6,6 @@ struct PencilCanvasView: UIViewRepresentable {
     var paperStyle: PaperStyle = .grid
 
     func makeUIView(context: Context) -> ZoomableCanvasHostView {
-        controller.canvasView.delegate = context.coordinator
-        controller.disableScribbleInteraction()
         controller.applyCurrentTool()
         controller.updateUndoState()
 
@@ -22,16 +19,16 @@ struct PencilCanvasView: UIViewRepresentable {
     func updateUIView(_ uiView: ZoomableCanvasHostView, context: Context) {
         controller.applyCurrentTool()
         uiView.updatePageSize(pageSize)
+        uiView.updateAttachments(controller.imageAttachments)
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(controller: controller)
     }
 
-    final class Coordinator: NSObject, PKCanvasViewDelegate, UIScrollViewDelegate {
+    final class Coordinator: NSObject, UIScrollViewDelegate {
         private let controller: CanvasController
         private weak var hostView: ZoomableCanvasHostView?
-        private var observingGesture = false
 
         init(controller: CanvasController) {
             self.controller = controller
@@ -40,20 +37,20 @@ struct PencilCanvasView: UIViewRepresentable {
         func attach(hostView: ZoomableCanvasHostView) {
             self.hostView = hostView
             hostView.setScrollDelegate(self)
-            hostView.updateInk(with: controller.canvasView.drawing)
-            if !observingGesture {
-                controller.canvasView.drawingGestureRecognizer.addTarget(self, action: #selector(handleDrawingGesture(_:)))
-                observingGesture = true
+            hostView.updateInk(with: controller.currentDrawingValue())
+            hostView.updateAttachments(controller.imageAttachments)
+            controller.canvasView.onEraserOverlay = { [weak self] event, point, width in
+                guard let host = self?.hostView else { return }
+                let scaledWidth = width * host.currentZoomScaleFactor
+                switch event {
+                case .began:
+                    host.beginEraserOverlay(at: point, width: scaledWidth)
+                case .moved:
+                    host.continueEraserOverlay(at: point, width: scaledWidth)
+                case .ended:
+                    host.finishEraserOverlay()
+                }
             }
-        }
-
-        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            controller.updateUndoState()
-            hostView?.updateInk(with: canvasView.drawing)
-            if !controller.useEraser {
-                hostView?.finishEraserOverlay()
-            }
-            controller.publishDrawingChange()
         }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -77,30 +74,6 @@ struct PencilCanvasView: UIViewRepresentable {
                 hostView?.updateZoomScale(scale)
             }
         }
-
-        @objc private func handleDrawingGesture(_ gesture: UIGestureRecognizer) {
-            guard let host = hostView, controller.useEraser else { return }
-            let point = gesture.location(in: host.eraserCoordinateSpace)
-            let width = controller.strokeWidth * host.currentZoomScaleFactor
-
-            switch gesture.state {
-            case .began:
-                host.beginEraserOverlay(at: point, width: width)
-            case .changed:
-                host.continueEraserOverlay(at: point, width: width)
-            case .ended, .cancelled, .failed:
-                host.finishEraserOverlay()
-            default:
-                break
-            }
-        }
-
-        deinit {
-            if observingGesture {
-                controller.canvasView.drawingGestureRecognizer.removeTarget(self, action: #selector(handleDrawingGesture(_:)))
-            }
-        }
-
     }
 }
 
@@ -109,9 +82,8 @@ final class ZoomableCanvasHostView: UIView {
     private let contentView = UIView()
     private let backgroundView = PageBackgroundView()
     private let gridView = GridPaperCanvasView()
-    private let inkView = CustomInkView()
     private let eraserOverlayView = EraserHighlightView()
-    private let canvasView: PKCanvasView
+    private let canvasView: DrawingCanvasView
     private let paperStyle: PaperStyle
     private var widthConstraint: NSLayoutConstraint?
     private var heightConstraint: NSLayoutConstraint?
@@ -126,7 +98,7 @@ final class ZoomableCanvasHostView: UIView {
     var eraserCoordinateSpace: UIView { eraserOverlayView }
     var currentZoomScaleFactor: CGFloat { max(1.0, currentZoomScale) }
 
-    init(canvasView: PKCanvasView, pageSize: CGSize, paperStyle: PaperStyle) {
+    init(canvasView: DrawingCanvasView, pageSize: CGSize, paperStyle: PaperStyle) {
         self.canvasView = canvasView
         self.pageSize = pageSize
         self.paperStyle = paperStyle
@@ -161,7 +133,7 @@ final class ZoomableCanvasHostView: UIView {
     func updatePageSize(_ newSize: CGSize) {
         guard pageSize != newSize else { return }
         pageSize = newSize
-        inkView.setNeedsDisplay()
+        canvasView.setNeedsDisplay()
     }
 
     func updateZoomScale(_ scale: CGFloat) {
@@ -180,31 +152,21 @@ final class ZoomableCanvasHostView: UIView {
         let effectiveScale = max(1.0, scale)
         let targetScale = baseContentScale * effectiveScale
 
-        inkView.updateScale(targetScale)
-
         if abs(gridView.contentScaleFactor - targetScale) > 0.01 {
             gridView.contentScaleFactor = targetScale
             gridView.layer.contentsScale = targetScale
             gridView.setNeedsDisplay()
         }
 
-        if abs(canvasView.contentScaleFactor - targetScale) > 0.01 {
-            canvasView.contentScaleFactor = targetScale
-            canvasView.layer.contentsScale = targetScale
-            canvasView.setNeedsDisplay()
-        }
-
-        if let drawingView = canvasView.drawingGestureRecognizer.view ?? canvasView.subviews.first {
-            if abs(drawingView.contentScaleFactor - targetScale) > 0.01 {
-                drawingView.contentScaleFactor = targetScale
-                drawingView.layer.contentsScale = targetScale
-                drawingView.setNeedsDisplay()
-            }
-        }
+        canvasView.updateScale(targetScale)
     }
 
-    func updateInk(with drawing: PKDrawing) {
-        inkView.update(drawing: drawing, scale: max(1.0, currentZoomScale))
+    func updateInk(with drawing: InkDrawing) {
+        canvasView.setDrawing(drawing)
+    }
+
+    func updateAttachments(_ attachments: [PageImageAttachment]) {
+        canvasView.setAttachments(attachments)
     }
 
     func beginEraserOverlay(at point: CGPoint, width: CGFloat) {
@@ -240,6 +202,9 @@ final class ZoomableCanvasHostView: UIView {
         scrollView.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         scrollView.panGestureRecognizer.minimumNumberOfTouches = 2
         scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.isExclusiveTouch = false
+        scrollView.panGestureRecognizer.delegate = scrollView
+        scrollView.pinchGestureRecognizer?.delegate = scrollView
 
         addSubview(scrollView)
         scrollView.addSubview(contentView)
@@ -265,7 +230,6 @@ final class ZoomableCanvasHostView: UIView {
 
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
         gridView.translatesAutoresizingMaskIntoConstraints = false
-        inkView.translatesAutoresizingMaskIntoConstraints = false
         canvasView.translatesAutoresizingMaskIntoConstraints = false
 
         canvasView.removeFromSuperview()
@@ -277,17 +241,15 @@ final class ZoomableCanvasHostView: UIView {
         gridView.layer.cornerRadius = 32
         gridView.layer.masksToBounds = true
         gridView.paperStyle = paperStyle
-        inkView.isUserInteractionEnabled = false
         canvasView.layer.cornerRadius = 32
         canvasView.clipsToBounds = true
 
         contentView.addSubview(backgroundView)
         contentView.addSubview(gridView)
-        contentView.addSubview(inkView)
-        contentView.addSubview(eraserOverlayView)
         contentView.addSubview(canvasView)
+        contentView.addSubview(eraserOverlayView)
 
-        let subviews = [backgroundView, gridView, inkView, eraserOverlayView, canvasView]
+        let subviews = [backgroundView, gridView, canvasView, eraserOverlayView]
         subviews.forEach { subview in
             NSLayoutConstraint.activate([
                 subview.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -303,13 +265,17 @@ final class ZoomableCanvasHostView: UIView {
         widthConstraint?.constant = pageSize.width
         heightConstraint?.constant = pageSize.height
         layoutIfNeeded()
-        inkView.setNeedsDisplay()
+        canvasView.setNeedsDisplay()
     }
 }
 
-final class CanvasScrollView: UIScrollView {
+final class CanvasScrollView: UIScrollView, UIGestureRecognizerDelegate {
     override func touchesShouldCancel(in view: UIView) -> Bool {
         true
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        touch.type != .pencil
     }
 }
 

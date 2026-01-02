@@ -2,16 +2,37 @@ import SwiftUI
 import UIKit
 
 final class CanvasController: ObservableObject {
+    enum EraserMode: String, CaseIterable {
+        case precision
+        case stroke
+
+        var width: CGFloat {
+            switch self {
+            case .precision:
+                return 6.0
+            case .stroke:
+                return 14.0
+            }
+        }
+    }
     let id: UUID
     let canvasView: DrawingCanvasView
     var onDrawingChanged: ((InkDrawing) -> Void)?
+    var onImageAttachmentsChanged: (([PageImageAttachment]) -> Void)?
+    var onVoiceNotesChanged: (([VoiceNote]) -> Void)?
 
     private static let allowedStrokeWidths: [CGFloat] = [1.8, 3.0, 4.4]
     private var undoManager = InkUndoManager()
+    private var penStrokeWidth: CGFloat
 
     @Published var strokeColor: UIColor {
         didSet {
-            let normalized = CanvasController.opaqueColor(from: strokeColor)
+            let normalized: UIColor
+            if useHighlighter {
+                normalized = strokeColor.withAlphaComponent(0.35)
+            } else {
+                normalized = CanvasController.opaqueColor(from: strokeColor)
+            }
             if !strokeColor.isEqual(normalized) {
                 strokeColor = normalized
                 return
@@ -27,30 +48,63 @@ final class CanvasController: ObservableObject {
                 strokeWidth = adjusted
                 return
             }
+            penStrokeWidth = adjusted
             applyCurrentTool()
         }
     }
 
     @Published var useEraser: Bool {
-        didSet { applyCurrentTool() }
+        didSet {
+            if useEraser {
+                useHighlighter = false
+            }
+            applyCurrentTool()
+        }
+    }
+
+    @Published var useHighlighter: Bool {
+        didSet {
+            if useHighlighter {
+                useEraser = false
+            }
+            applyCurrentTool()
+        }
     }
 
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
+    @Published var imageAttachments: [PageImageAttachment] = [] {
+        didSet {
+            canvasView.setAttachments(imageAttachments)
+            onImageAttachmentsChanged?(imageAttachments)
+        }
+    }
+
+    @Published var voiceNotes: [VoiceNote] = [] {
+        didSet { onVoiceNotesChanged?(voiceNotes) }
+    }
+    @Published var eraserMode: EraserMode = .stroke {
+        didSet { applyCurrentTool() }
+    }
 
     init(id: UUID = UUID(),
          strokeColor: UIColor = UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0),
          strokeWidth: CGFloat = 3.2,
-         useEraser: Bool = false) {
+         useEraser: Bool = false,
+         useHighlighter: Bool = false) {
         self.id = id
         let view = DrawingCanvasView()
         canvasView = view
         self.strokeColor = CanvasController.opaqueColor(from: strokeColor)
-        self.strokeWidth = CanvasController.nearestStrokeWidth(to: strokeWidth)
+        let normalizedWidth = CanvasController.nearestStrokeWidth(to: strokeWidth)
+        self.strokeWidth = normalizedWidth
+        self.penStrokeWidth = normalizedWidth
         self.useEraser = useEraser
+        self.useHighlighter = useHighlighter
         configureCallbacks()
         applyCurrentTool()
         setDrawing(.empty)
+        canvasView.setAttachments(imageAttachments)
         updateUndoState()
     }
 
@@ -64,13 +118,39 @@ final class CanvasController: ObservableObject {
         updateUndoState()
     }
 
+    func setImageAttachments(_ attachments: [PageImageAttachment]) {
+        imageAttachments = attachments
+        canvasView.setAttachments(attachments)
+    }
+
+    func setVoiceNotes(_ notes: [VoiceNote]) {
+        voiceNotes = notes
+    }
+
+    func setEraserMode(_ mode: EraserMode) {
+        eraserMode = mode
+    }
+
     func publishDrawingChange() {
         onDrawingChanged?(undoManager.drawing)
     }
 
     func applyCurrentTool() {
-        let color = CanvasController.opaqueColor(from: strokeColor)
-        canvasView.setTool(color: color, width: strokeWidth, isEraser: useEraser)
+        let color: UIColor
+        if useHighlighter {
+            color = strokeColor.withAlphaComponent(0.35)
+        } else {
+            color = CanvasController.opaqueColor(from: strokeColor)
+        }
+        let width: CGFloat
+        if useEraser {
+            width = eraserMode.width
+        } else if useHighlighter {
+            width = max(penStrokeWidth, 5.5)
+        } else {
+            width = penStrokeWidth
+        }
+        canvasView.setTool(color: color, width: width, isEraser: useEraser)
     }
 
     func undo() {
@@ -117,6 +197,9 @@ final class CanvasController: ObservableObject {
     private func configureCallbacks() {
         canvasView.onStrokeCommitted = { [weak self] stroke in
             self?.handleStrokeCommitted(stroke)
+        }
+        canvasView.onAttachmentsChanged = { [weak self] updated in
+            self?.imageAttachments = updated
         }
     }
 

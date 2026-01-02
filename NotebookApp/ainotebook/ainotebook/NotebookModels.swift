@@ -8,17 +8,38 @@ struct NotebookPageModel: Identifiable, Hashable, Codable {
     var created: Date
     var paperStyle: PaperStyle
     var drawingData: Data?
+    var imageAttachments: [PageImageAttachment]
+    var voiceNotes: [VoiceNote]
 
     init(id: UUID = UUID(),
          title: String,
          created: Date = Date(),
          paperStyle: PaperStyle = .grid,
-         drawingData: Data? = nil) {
+         drawingData: Data? = nil,
+         imageAttachments: [PageImageAttachment] = [],
+         voiceNotes: [VoiceNote] = []) {
         self.id = id
         self.title = title
         self.created = created
         self.paperStyle = paperStyle
         self.drawingData = drawingData
+        self.imageAttachments = imageAttachments
+        self.voiceNotes = voiceNotes
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, created, paperStyle, drawingData, imageAttachments, voiceNotes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        created = try container.decodeIfPresent(Date.self, forKey: .created) ?? Date()
+        paperStyle = try container.decodeIfPresent(PaperStyle.self, forKey: .paperStyle) ?? .grid
+        drawingData = try container.decodeIfPresent(Data.self, forKey: .drawingData)
+        imageAttachments = try container.decodeIfPresent([PageImageAttachment].self, forKey: .imageAttachments) ?? []
+        voiceNotes = try container.decodeIfPresent([VoiceNote].self, forKey: .voiceNotes) ?? []
     }
 }
 
@@ -65,7 +86,9 @@ struct Notebook: Identifiable, Hashable, Codable {
                                   title: page.title,
                                   created: page.created,
                                   paperStyle: paperStyle,
-                                  drawingData: page.drawingData)
+                                  drawingData: page.drawingData,
+                                  imageAttachments: page.imageAttachments,
+                                  voiceNotes: page.voiceNotes)
             }
         }
 
@@ -122,7 +145,9 @@ private extension Notebook {
                               title: page.title,
                               created: page.created,
                               paperStyle: paperStyle,
-                              drawingData: page.drawingData)
+                              drawingData: page.drawingData,
+                              imageAttachments: page.imageAttachments,
+                              voiceNotes: page.voiceNotes)
         }
     }
 }
@@ -148,5 +173,53 @@ struct CodableColor: Codable, Hashable {
 
     var color: Color {
         Color(red: red, green: green, blue: blue, opacity: alpha)
+    }
+}
+
+struct PageImageAttachment: Identifiable, Hashable, Codable {
+    var id: UUID
+    var imageData: Data
+    var position: CodablePoint
+    var size: CodableSize
+    var rotation: Double
+
+    init(id: UUID = UUID(),
+         imageData: Data,
+         position: CodablePoint,
+         size: CodableSize,
+         rotation: Double = 0) {
+        self.id = id
+        self.imageData = imageData
+        self.position = position
+        self.size = size
+        self.rotation = rotation
+    }
+}
+
+struct CodableSize: Codable, Hashable {
+    var width: CGFloat
+    var height: CGFloat
+
+    init(width: CGFloat, height: CGFloat) {
+        self.width = width
+        self.height = height
+    }
+
+    var size: CGSize {
+        CGSize(width: width, height: height)
+    }
+}
+
+struct VoiceNote: Identifiable, Hashable, Codable {
+    var id: UUID
+    var createdAt: Date
+    var duration: TimeInterval
+    var fileName: String
+
+    init(id: UUID = UUID(), createdAt: Date = Date(), duration: TimeInterval, fileName: String) {
+        self.id = id
+        self.createdAt = createdAt
+        self.duration = duration
+        self.fileName = fileName
     }
 }

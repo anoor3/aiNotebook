@@ -19,6 +19,7 @@ struct PencilCanvasView: UIViewRepresentable {
     func updateUIView(_ uiView: ZoomableCanvasHostView, context: Context) {
         controller.applyCurrentTool()
         uiView.updatePageSize(pageSize)
+        uiView.updateAttachments(controller.imageAttachments)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -37,6 +38,7 @@ struct PencilCanvasView: UIViewRepresentable {
             self.hostView = hostView
             hostView.setScrollDelegate(self)
             hostView.updateInk(with: controller.currentDrawingValue())
+            hostView.updateAttachments(controller.imageAttachments)
             controller.canvasView.onEraserOverlay = { [weak self] event, point, width in
                 guard let host = self?.hostView else { return }
                 let scaledWidth = width * host.currentZoomScaleFactor
@@ -163,6 +165,10 @@ final class ZoomableCanvasHostView: UIView {
         canvasView.setDrawing(drawing)
     }
 
+    func updateAttachments(_ attachments: [PageImageAttachment]) {
+        canvasView.setAttachments(attachments)
+    }
+
     func beginEraserOverlay(at point: CGPoint, width: CGFloat) {
         eraserOverlayView.beginStroke(at: point, width: width)
     }
@@ -196,6 +202,9 @@ final class ZoomableCanvasHostView: UIView {
         scrollView.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         scrollView.panGestureRecognizer.minimumNumberOfTouches = 2
         scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.isExclusiveTouch = false
+        scrollView.panGestureRecognizer.delegate = scrollView
+        scrollView.pinchGestureRecognizer?.delegate = scrollView
 
         addSubview(scrollView)
         scrollView.addSubview(contentView)
@@ -260,9 +269,13 @@ final class ZoomableCanvasHostView: UIView {
     }
 }
 
-final class CanvasScrollView: UIScrollView {
+final class CanvasScrollView: UIScrollView, UIGestureRecognizerDelegate {
     override func touchesShouldCancel(in view: UIView) -> Bool {
         true
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        touch.type != .pencil
     }
 }
 

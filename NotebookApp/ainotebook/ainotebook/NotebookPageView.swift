@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import AVFoundation
 
 private struct PageVisibilityPreferenceKey: PreferenceKey {
     static var defaultValue: [UUID: CGFloat] = [:]
@@ -39,6 +41,15 @@ struct NotebookPageView: View {
         Color(red: 0.74, green: 0.41, blue: 0.89),
         Color(red: 0.95, green: 0.52, blue: 0.70)
     ]
+    @State private var isHighlighterActive = false
+    @State private var showImagePicker = false
+    @State private var showImagePickerSheet = false
+    @State private var imagePickerSource: UIImagePickerController.SourceType = .photoLibrary
+    @State private var isRecording = false
+    @State private var audioRecorder: AVAudioRecorder?
+    @State private var showVoiceNotes = false
+    @State private var audioPlayer: AVAudioPlayer?
+    @State private var eraserMode: CanvasController.EraserMode = .stroke
     @State private var showPageIndicator = false
     @State private var pageIndicatorWorkItem: DispatchWorkItem?
     @State private var scrollProxy: ScrollViewProxy?
@@ -136,6 +147,22 @@ struct NotebookPageView: View {
         .onChange(of: customColor) { _ in
             applyCustomColorSelection()
         }
+        .sheet(isPresented: $showImagePickerSheet) {
+            ImagePicker(sourceType: imagePickerSource) { image in
+                showImagePickerSheet = false
+                guard let image else { return }
+                insertImage(image)
+            }
+        }
+        .sheet(isPresented: $showVoiceNotes) {
+            VoiceNotesList(notes: activePageController?.voiceNotes ?? [],
+                           onClose: { showVoiceNotes = false },
+                           onPlay: { note in playVoiceNote(note) })
+        }
+        .onChange(of: activePageController?.imageAttachments ?? []) { _ in
+            // ensure selection resets when switching pages
+            eraserMode = activePageController?.eraserMode ?? .stroke
+        }
         .onChange(of: pageStore.activePageID) { id in
             guard let id = id else { return }
             isProgrammaticJump = true
@@ -154,12 +181,31 @@ struct NotebookPageView: View {
         HStack(spacing: 18) {
             toolButton(systemName: "pencil.tip", isActive: !isUsingEraser) {
                 isUsingEraser = false
-                applyToolSettings(useEraser: false)
+                isHighlighterActive = false
+                applyToolSettings(useEraser: false, useHighlighter: false)
             }
 
             toolButton(systemName: "eraser", isActive: isUsingEraser) {
                 isUsingEraser = true
-                applyToolSettings(useEraser: true)
+                isHighlighterActive = false
+                applyToolSettings(useEraser: true, useHighlighter: false)
+            }
+            .contextMenu {
+                ForEach(CanvasController.EraserMode.allCases, id: \.self) { mode in
+                    Button {
+                        eraserMode = mode
+                        isUsingEraser = true
+                        isHighlighterActive = false
+                        applyToolSettings(useEraser: true, useHighlighter: false, eraserMode: mode)
+                    } label: {
+                        Label(mode == .precision ? "Precision Eraser" : "Stroke Eraser",
+                              systemImage: eraserMode == mode ? "checkmark" : "circle")
+                    }
+                }
+            }
+
+            toolButton(systemName: "highlighter", isActive: isHighlighterActive) {
+                toggleHighlighter()
             }
 
             Divider().frame(height: 20)
@@ -169,6 +215,37 @@ struct NotebookPageView: View {
             Divider().frame(height: 20)
 
             thicknessButtons
+
+            Divider().frame(height: 20)
+
+            Button(action: {
+                imagePickerSource = .photoLibrary
+                showImagePicker = true
+            }) {
+                Image(systemName: "photo")
+            }
+            .buttonStyle(ToolbarButtonStyle(isActive: false))
+            .confirmationDialog("Insert Image", isPresented: $showImagePicker, titleVisibility: .visible) {
+                Button("Choose from Photos") {
+                    imagePickerSource = .photoLibrary
+                    showImagePicker = false
+                    presentImagePicker()
+                }
+                Button("Take Photo") {
+                    imagePickerSource = .camera
+                    showImagePicker = false
+                    presentImagePicker()
+                }
+                Button("Cancel", role: .cancel) { showImagePicker = false }
+            }
+
+            Button(action: { toggleRecording() }) {
+                Image(systemName: isRecording ? "stop.circle.fill" : "mic")
+            }
+            .buttonStyle(ToolbarButtonStyle(isActive: isRecording))
+            .contextMenu {
+                Button("Voice Notes") { showVoiceNotes = true }
+            }
 
             Spacer()
 
@@ -199,7 +276,8 @@ struct NotebookPageView: View {
                 Button(action: {
                     currentStrokeColor = color
                     isUsingEraser = false
-                    applyToolSettings(useEraser: false, strokeColor: color)
+                    isHighlighterActive = false
+                    applyToolSettings(useEraser: false, strokeColor: color, useHighlighter: false)
                 }) {
                     Circle()
                         .fill(Color(color))
@@ -244,7 +322,8 @@ struct NotebookPageView: View {
                 Button(action: {
                     currentStrokeWidth = width
                     isUsingEraser = false
-                    applyToolSettings(useEraser: false, strokeWidth: width)
+                    isHighlighterActive = false
+                    applyToolSettings(useEraser: false, strokeWidth: width, useHighlighter: false)
                 }) {
                     Capsule()
                         .fill(Color.primary.opacity(0.8))
@@ -325,10 +404,18 @@ struct NotebookPageView: View {
 
     private func applyToolSettings(useEraser: Bool? = nil,
                                    strokeColor: UIColor? = nil,
-                                   strokeWidth: CGFloat? = nil) {
+                                   strokeWidth: CGFloat? = nil,
+                                   useHighlighter: Bool? = nil,
+                                   eraserMode: CanvasController.EraserMode? = nil) {
         for controller in pageStore.pages {
             if let eraser = useEraser {
                 controller.useEraser = eraser
+            }
+            if let highlighter = useHighlighter {
+                controller.useHighlighter = highlighter
+            }
+            if let eraserMode = eraserMode {
+                controller.setEraserMode(eraserMode)
             }
             if let color = strokeColor {
                 controller.strokeColor = color
@@ -342,7 +429,8 @@ struct NotebookPageView: View {
     private func applyCustomColorSelection() {
         let color = UIColor(customColor)
         currentStrokeColor = color
-        applyToolSettings(useEraser: false, strokeColor: color)
+        isHighlighterActive = false
+        applyToolSettings(useEraser: false, strokeColor: color, useHighlighter: false)
     }
 
     private func updatePaletteSelection(for color: Color) {
@@ -366,7 +454,107 @@ struct NotebookPageView: View {
                                   strokeColor: currentStrokeColor,
                                   strokeWidth: currentStrokeWidth,
                                   useEraser: isUsingEraser)
+            applyToolSettings(eraserMode: eraserMode)
             isLoadingNextPage = false
+        }
+    }
+
+    private func toggleHighlighter() {
+        isUsingEraser = false
+        isHighlighterActive.toggle()
+        if isHighlighterActive {
+            let highlightColor = UIColor.yellow.withAlphaComponent(0.35)
+            applyToolSettings(useEraser: false, strokeColor: highlightColor, useHighlighter: true)
+        } else {
+            applyToolSettings(useEraser: false, strokeColor: currentStrokeColor, useHighlighter: false)
+        }
+    }
+
+    private func presentImagePicker() {
+        if imagePickerSource == .camera && !UIImagePickerController.isSourceTypeAvailable(.camera) {
+            imagePickerSource = .photoLibrary
+        }
+        showImagePickerSheet = true
+    }
+
+    private func insertImage(_ image: UIImage) {
+        guard let controller = activePageController,
+              let data = image.jpegData(compressionQuality: 0.9) else { return }
+        let aspect = image.size.height / max(image.size.width, 1)
+        let targetWidth: CGFloat = 320
+        let size = CGSize(width: targetWidth, height: targetWidth * aspect)
+        let position = CodablePoint(CGPoint(x: defaultPageSize.width / 2, y: defaultPageSize.height / 2))
+        let attachment = PageImageAttachment(imageData: data,
+                                             position: position,
+                                             size: CodableSize(width: size.width, height: size.height),
+                                             rotation: 0)
+        controller.imageAttachments.append(attachment)
+    }
+
+    private func toggleRecording() {
+        if isRecording {
+            stopRecording()
+        } else {
+            startRecording()
+        }
+    }
+
+    private func startRecording() {
+        guard let pageID = pageStore.activePageID else { return }
+        AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            guard granted else { return }
+            DispatchQueue.main.async {
+                do {
+                    let session = AVAudioSession.sharedInstance()
+                    try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+                    try session.setActive(true)
+
+                    let url = DrawingPersistence.voiceNoteURL(notebookID: pageStore.notebookIdentifier,
+                                                              pageID: pageID,
+                                                              noteID: UUID())
+                    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                            withIntermediateDirectories: true)
+                    let settings: [String: Any] = [
+                        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                        AVSampleRateKey: 44100,
+                        AVNumberOfChannelsKey: 1,
+                        AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+                    ]
+                    let recorder = try AVAudioRecorder(url: url, settings: settings)
+                    recorder.prepareToRecord()
+                    recorder.record()
+                    self.audioRecorder = recorder
+                    self.isRecording = true
+                } catch {
+                    self.audioRecorder = nil
+                    self.isRecording = false
+                }
+            }
+        }
+    }
+
+    private func stopRecording() {
+        guard let recorder = audioRecorder, let controller = activePageController else { return }
+        recorder.stop()
+        recorder.prepareToPlay()
+        let duration = recorder.currentTime
+        let fileURL = recorder.url
+        audioRecorder = nil
+        isRecording = false
+
+        let note = VoiceNote(duration: duration, fileName: fileURL.lastPathComponent)
+        controller.voiceNotes.append(note)
+    }
+
+    private func playVoiceNote(_ note: VoiceNote) {
+        guard let url = DrawingPersistence.existingVoiceNoteURL(fileName: note.fileName,
+                                                                notebookID: pageStore.notebookIdentifier,
+                                                                pageID: pageStore.activePageID) else { return }
+        do {
+            audioPlayer = try AVAudioPlayer(contentsOf: url)
+            audioPlayer?.play()
+        } catch {
+            audioPlayer = nil
         }
     }
 }
@@ -583,5 +771,80 @@ struct NotebookPageView_Previews: PreviewProvider {
                                                       pageModels: [NotebookPageModel(title: "Page 1")]))
             .previewInterfaceOrientation(.landscapeLeft)
             .previewDevice("iPad (10th generation)")
+    }
+}
+
+struct ImagePicker: UIViewControllerRepresentable {
+    var sourceType: UIImagePickerController.SourceType
+    var completion: (UIImage?) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(completion: completion)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = sourceType
+        picker.delegate = context.coordinator
+        picker.allowsEditing = false
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let completion: (UIImage?) -> Void
+
+        init(completion: @escaping (UIImage?) -> Void) {
+            self.completion = completion
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            completion(nil)
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            let image = (info[.editedImage] ?? info[.originalImage]) as? UIImage
+            completion(image)
+        }
+    }
+}
+
+struct VoiceNotesList: View {
+    var notes: [VoiceNote]
+    var onClose: () -> Void
+    var onPlay: (VoiceNote) -> Void
+
+    private let formatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
+    var body: some View {
+        NavigationStack {
+            List(notes) { note in
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(formatter.string(from: note.createdAt))
+                            .font(.subheadline)
+                        Text(String(format: "%.1f sec", note.duration))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: { onPlay(note) }) {
+                        Image(systemName: "play.circle")
+                    }
+                }
+            }
+            .navigationTitle("Voice Notes")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", action: onClose)
+                }
+            }
+        }
     }
 }

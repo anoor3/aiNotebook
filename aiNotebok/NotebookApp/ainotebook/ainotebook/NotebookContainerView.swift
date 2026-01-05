@@ -70,6 +70,7 @@ struct NotebookContainerView: View {
 private struct PageListView: View {
     @ObservedObject var pageStore: NotebookPageStore
     var onClose: () -> Void
+    @State private var pendingDeleteID: UUID?
 
     var body: some View {
         NavigationStack {
@@ -90,6 +91,14 @@ private struct PageListView: View {
                         pageStore.activePageID = page.id
                         onClose()
                     }
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            pendingDeleteID = page.id
+                        } label: {
+                            Label("Delete Page", systemImage: "trash")
+                        }
+                        .disabled(pageStore.pages.count <= 1)
+                    }
                 }
             }
             .navigationTitle("Pages")
@@ -98,6 +107,20 @@ private struct PageListView: View {
                     Button("Close") { onClose() }
                 }
             }
+        }
+        .confirmationDialog("Delete page?",
+                             isPresented: Binding(get: { pendingDeleteID != nil },
+                                                  set: { if !$0 { pendingDeleteID = nil } }),
+                             presenting: pendingDeleteID) { pageID in
+            Button("Delete Page", role: .destructive) {
+                pageStore.deletePage(withID: pageID)
+                pendingDeleteID = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteID = nil
+            }
+        } message: { _ in
+            Text("This page will be permanently removed from the notebook.")
         }
     }
 }

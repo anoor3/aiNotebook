@@ -25,6 +25,8 @@
 
 /* Begin PBXFileReference section */
 		C46664A92F0200F200ADD22F /* ainotebook.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ainotebook.xcodeproj; sourceTree = "<group>"; };
+		C46667D72F0A48CF00ADD22F /* ainotebook.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ainotebook.xcodeproj; sourceTree = "<group>"; };
+		C46F917C2F0CEBCA00FA9FFE /* ainotebook.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ainotebook.xcodeproj; sourceTree = "<group>"; };
 		C47FD3BF2EF0F44B0034109C /* ainotebook.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ainotebook.xcodeproj; sourceTree = "<group>"; };
 		C47FD4412EF8E4350034109C /* ainotebook.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ainotebook.xcodeproj; sourceTree = "<group>"; };
 		C47FD8092EFBA9630034109C /* ainotebook.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = ainotebook.xcodeproj; sourceTree = "<group>"; };
@@ -77,6 +79,20 @@
 
 /* Begin PBXGroup section */
 		C46664BB2F0200F200ADD22F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C46667EA2F0A48CF00ADD22F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C46F91912F0CEBCA00FA9FFE /* Products */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -234,6 +250,14 @@
 				{
 					ProductGroup = C47FD4502EF8E4350034109C /* Products */;
 					ProjectRef = C47FD4412EF8E4350034109C /* ainotebook.xcodeproj */;
+				},
+				{
+					ProductGroup = C46667EA2F0A48CF00ADD22F /* Products */;
+					ProjectRef = C46667D72F0A48CF00ADD22F /* ainotebook.xcodeproj */;
+				},
+				{
+					ProductGroup = C46F91912F0CEBCA00FA9FFE /* Products */;
+					ProjectRef = C46F917C2F0CEBCA00FA9FFE /* ainotebook.xcodeproj */;
 				},
 				{
 					ProductGroup = C46664BB2F0200F200ADD22F /* Products */;

@@ -87,6 +87,7 @@ struct Notebook: Identifiable, Hashable, Codable {
     var isFavorite: Bool
     var pages: [NotebookPageModel]
     var currentPageIndex: Int
+    var isTrashed: Bool
 
     init(id: UUID = UUID(),
          title: String,
@@ -95,13 +96,15 @@ struct Notebook: Identifiable, Hashable, Codable {
          lastOpened: Date = Date(),
          isFavorite: Bool = false,
          pages: [NotebookPageModel] = [NotebookPageModel(title: "Page 1")],
-         currentPageIndex: Int = 0) {
+         currentPageIndex: Int = 0,
+         isTrashed: Bool = false) {
         self.id = id
         self.title = title
         self.coverColor = coverColor
         self.paperStyle = paperStyle
         self.lastOpened = lastOpened
         self.isFavorite = isFavorite
+        self.isTrashed = isTrashed
 
         let normalizedPages: [NotebookPageModel]
         if pages.isEmpty {
@@ -129,7 +132,7 @@ struct Notebook: Identifiable, Hashable, Codable {
         ]
     }
     private enum CodingKeys: String, CodingKey {
-        case id, title, coverColor, paperStyle, lastOpened, isFavorite, pages, currentPageIndex
+        case id, title, coverColor, paperStyle, lastOpened, isFavorite, pages, currentPageIndex, isTrashed
     }
 
     init(from decoder: Decoder) throws {
@@ -145,6 +148,7 @@ struct Notebook: Identifiable, Hashable, Codable {
         pages = Notebook.normalizePages(decodedPages, paperStyle: paperStyle)
         currentPageIndex = min(try container.decodeIfPresent(Int.self, forKey: .currentPageIndex) ?? 0,
                                max(pages.count - 1, 0))
+        isTrashed = try container.decodeIfPresent(Bool.self, forKey: .isTrashed) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -157,6 +161,7 @@ struct Notebook: Identifiable, Hashable, Codable {
         try container.encode(isFavorite, forKey: .isFavorite)
         try container.encode(pages, forKey: .pages)
         try container.encode(currentPageIndex, forKey: .currentPageIndex)
+        try container.encode(isTrashed, forKey: .isTrashed)
     }
 }
 

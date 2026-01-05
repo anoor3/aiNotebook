@@ -23,6 +23,10 @@
 		C4F7082D2EF0B65A00AA5C45 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C4F7080E2EF0B65A00AA5C45 /* Assets.xcassets */; };
 		C4F7082E2EF0B65A00AA5C45 /* NotebookDecorations.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F7080F2EF0B65A00AA5C45 /* NotebookDecorations.swift */; };
 		C4F708302EF0B65A00AA5C45 /* SessionStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708102EF0B65A00AA5C45 /* SessionStatePersistence.swift */; };
+		C4F70A072EF0B65A00AA5CAA /* InkTileCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A062EF0B65A00AA5CAA /* InkTileCache.swift */; };
+		C4F70A012EF0B65A00AA5CAA /* VoiceRecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A002EF0B65A00AA5CAA /* VoiceRecordingManager.swift */; };
+		C4F70A032EF0B65A00AA5CAA /* VoiceRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A022EF0B65A00AA5CAA /* VoiceRecording.swift */; };
+		C4F70A052EF0B65A00AA5CAA /* VoiceRecorderHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A042EF0B65A00AA5CAA /* VoiceRecorderHUD.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,6 +66,10 @@
 		C4F7080E2EF0B65A00AA5C45 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C4F7080F2EF0B65A00AA5C45 /* NotebookDecorations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookDecorations.swift; sourceTree = "<group>"; };
 		C4F708102EF0B65A00AA5C45 /* SessionStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStatePersistence.swift; sourceTree = "<group>"; };
+		C4F70A062EF0B65A00AA5CAA /* InkTileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkTileCache.swift; sourceTree = "<group>"; };
+		C4F70A002EF0B65A00AA5CAA /* VoiceRecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecordingManager.swift; sourceTree = "<group>"; };
+		C4F70A022EF0B65A00AA5CAA /* VoiceRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecording.swift; sourceTree = "<group>"; };
+		C4F70A042EF0B65A00AA5CAA /* VoiceRecorderHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorderHUD.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,10 +132,13 @@
 				C4F7080C2EF0B65A00AA5C45 /* NotebookPageView.swift */,
 				C4F7080D2EF0B65A00AA5C45 /* NotebookContainerView.swift */,
 				C4F7080F2EF0B65A00AA5C45 /* NotebookDecorations.swift */,
+				C4F70A062EF0B65A00AA5CAA /* InkTileCache.swift */,
 				C4F708102EF0B65A00AA5C45 /* SessionStatePersistence.swift */,
+				C4F70A002EF0B65A00AA5CAA /* VoiceRecordingManager.swift */,
+				C4F70A022EF0B65A00AA5CAA /* VoiceRecording.swift */,
+				C4F70A042EF0B65A00AA5CAA /* VoiceRecorderHUD.swift */,
 				C4F7080E2EF0B65A00AA5C45 /* Assets.xcassets */,
 			);
-			path = ainotebook;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -280,6 +291,10 @@
 				C4F7082C2EF0B65A00AA5C45 /* NotebookContainerView.swift in Sources */,
 				C4F7082E2EF0B65A00AA5C45 /* NotebookDecorations.swift in Sources */,
 				C4F708302EF0B65A00AA5C45 /* SessionStatePersistence.swift in Sources */,
+				C4F70A012EF0B65A00AA5CAA /* VoiceRecordingManager.swift in Sources */,
+				C4F70A032EF0B65A00AA5CAA /* VoiceRecording.swift in Sources */,
+				C4F70A052EF0B65A00AA5CAA /* VoiceRecorderHUD.swift in Sources */,
+				C4F70A072EF0B65A00AA5CAA /* InkTileCache.swift in Sources */,
 				C4F708222EF0B65A00AA5C45 /* NotebookView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -445,6 +460,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ainotebookApp;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access is needed to capture photos to insert in your notes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Allows recording voice notes inside your notebook.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Photo access lets you insert existing pictures into your notebook.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -476,6 +492,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ainotebookApp;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access is needed to capture photos to insert in your notes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Allows recording voice notes inside your notebook.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Photo access lets you insert existing pictures into your notebook.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

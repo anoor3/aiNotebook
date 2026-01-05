@@ -7,15 +7,23 @@ struct LibraryRootView: View {
     @State private var renameNotebookID: Notebook.ID?
     @State private var hasLoadedLibrary = false
     @State private var hasRestoredSession = false
+    @State private var showingTrash = false
+    @State private var showingMarketplace = false
+    @State private var prefersDarkMode = ThemePreference.load()
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            LibraryView(notebooks: notebooks,
+            LibraryView(notebooks: activeNotebooks,
                         onOpen: openNotebook,
                         onNewNotebook: { showingNewNotebook = true },
                         onDelete: deleteNotebook,
                         onRenameRequest: { notebook in renameNotebookID = notebook.id },
-                        onFavoriteToggle: toggleFavorite)
+                        onFavoriteToggle: toggleFavorite,
+                        onOpenTrash: { showingTrash = true },
+                        onOpenMarketplace: { showingMarketplace = true },
+                        trashCount: trashedNotebooks.count,
+                        prefersDarkMode: prefersDarkMode,
+                        onToggleDarkMode: toggleTheme)
                 .navigationDestination(for: Notebook.ID.self) { id in
                     if let binding = binding(for: id) {
                         NotebookContainerView(notebook: binding)
@@ -31,6 +39,16 @@ struct LibraryRootView: View {
                 SessionStatePersistence.save(notebookID: notebook.id,
                                               pageIndex: notebook.currentPageIndex)
             }
+        }
+        .sheet(isPresented: $showingTrash) {
+            NotebookTrashSheet(notebooks: trashedNotebooks,
+                               onRestore: restoreNotebook,
+                               onDeleteForever: permanentlyDeleteNotebook) {
+                showingTrash = false
+            }
+        }
+        .sheet(isPresented: $showingMarketplace) {
+            NotebookMarketplaceSheet(onDismiss: { showingMarketplace = false })
         }
         .sheet(item: Binding<RenameSession?>(
             get: { renameNotebookID.map(RenameSession.init) },
@@ -50,6 +68,12 @@ struct LibraryRootView: View {
         .onChange(of: notebooks) { updated in
             NotebookLibraryPersistence.save(updated)
         }
+        .preferredColorScheme(navigationPath.isEmpty ? (prefersDarkMode ? .dark : .light) : nil)
+    }
+
+    private func toggleTheme() {
+        prefersDarkMode.toggle()
+        ThemePreference.save(prefersDarkMode)
     }
 
     private func binding(for id: Notebook.ID) -> Binding<Notebook>? {
@@ -58,6 +82,7 @@ struct LibraryRootView: View {
     }
 
     private func openNotebook(_ notebook: Notebook) {
+        guard !notebook.isTrashed else { return }
         updateLastOpened(for: notebook.id)
         SessionStatePersistence.save(notebookID: notebook.id,
                                       pageIndex: notebook.currentPageIndex)
@@ -71,7 +96,8 @@ struct LibraryRootView: View {
     }
 
     private func deleteNotebook(_ notebook: Notebook) {
-        notebooks.removeAll { $0.id == notebook.id }
+        guard let index = notebooks.firstIndex(where: { $0.id == notebook.id }) else { return }
+        notebooks[index].isTrashed = true
         SessionStatePersistence.clearIfMatching(notebook.id)
     }
 
@@ -98,10 +124,31 @@ struct LibraryRootView: View {
               let (notebookID, pageIndex) = SessionStatePersistence.load(),
               let index = notebooks.firstIndex(where: { $0.id == notebookID }) else { return }
 
+        guard !notebooks[index].isTrashed else { return }
+
         let pageClamp = max(0, min(pageIndex, notebooks[index].pages.count - 1))
         notebooks[index].currentPageIndex = pageClamp
         navigationPath = [notebookID]
         hasRestoredSession = true
+    }
+
+    private func restoreNotebook(_ notebook: Notebook) {
+        guard let index = notebooks.firstIndex(where: { $0.id == notebook.id }) else { return }
+        notebooks[index].isTrashed = false
+    }
+
+    private func permanentlyDeleteNotebook(_ notebook: Notebook) {
+        notebooks.removeAll { $0.id == notebook.id }
+        SessionStatePersistence.clearIfMatching(notebook.id)
+        DrawingPersistence.deleteNotebook(notebookID: notebook.id)
+    }
+
+    private var activeNotebooks: [Notebook] {
+        notebooks.filter { !$0.isTrashed }
+    }
+
+    private var trashedNotebooks: [Notebook] {
+        notebooks.filter { $0.isTrashed }
     }
 }
 
@@ -116,29 +163,53 @@ struct LibraryView: View {
     var onDelete: (Notebook) -> Void
     var onRenameRequest: (Notebook) -> Void
     var onFavoriteToggle: (Notebook) -> Void
+    var onOpenTrash: () -> Void
+    var onOpenMarketplace: () -> Void
+    var trashCount: Int
+    var prefersDarkMode: Bool
+    var onToggleDarkMode: () -> Void
 
     private let gridItems = Array(repeating: GridItem(.flexible(), spacing: 18), count: 3)
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: gridItems, spacing: 18) {
-                NewNotebookCard(action: onNewNotebook)
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 12) {
+                    Text("Library")
+                        .font(.system(size: 34, weight: .bold))
+                    Spacer()
+                    LibraryIconButton(systemName: prefersDarkMode ? "sun.max" : "moon",
+                                      label: "Toggle theme",
+                                      action: onToggleDarkMode)
+                    LibraryIconButton(systemName: "bag",
+                                      label: "Marketplace",
+                                      action: onOpenMarketplace)
+                    LibraryIconButton(systemName: "trash",
+                                      label: "Trash",
+                                      badge: trashCount,
+                                      action: onOpenTrash)
+                }
 
-                ForEach(notebooks) { notebook in
-                    NotebookCardView(notebook: notebook)
-                        .onTapGesture { onOpen(notebook) }
-                        .contextMenu {
-                            Button("Rename", action: { onRenameRequest(notebook) })
-                            Button(notebook.isFavorite ? "Unfavorite" : "Favorite", action: { onFavoriteToggle(notebook) })
-                            Divider()
-                            Button(role: .destructive) { onDelete(notebook) } label: { Text("Delete") }
-                        }
+                LazyVGrid(columns: gridItems, spacing: 18) {
+                    NewNotebookCard(action: onNewNotebook)
+
+                    ForEach(notebooks) { notebook in
+                        NotebookCardView(notebook: notebook)
+                            .onTapGesture { onOpen(notebook) }
+                            .contextMenu {
+                                Button("Rename", action: { onRenameRequest(notebook) })
+                                Button(notebook.isFavorite ? "Unfavorite" : "Favorite", action: { onFavoriteToggle(notebook) })
+                                Divider()
+                                Button(role: .destructive) { onDelete(notebook) } label: { Text("Move to Trash") }
+                            }
+                    }
                 }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 28)
         }
-        .navigationTitle("Library")
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -217,6 +288,145 @@ struct NewNotebookCard: View {
         .buttonStyle(.plain)
     }
 }
+
+private struct NotebookTrashSheet: View {
+    var notebooks: [Notebook]
+    var onRestore: (Notebook) -> Void
+    var onDeleteForever: (Notebook) -> Void
+    var onDismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if notebooks.isEmpty {
+                    VStack(alignment: .center, spacing: 8) {
+                        Image(systemName: "trash")
+                            .font(.title)
+                            .foregroundColor(.secondary)
+                        Text("Trash is empty")
+                            .font(.headline)
+                        Text("Notebooks you delete will appear here.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                } else {
+                    ForEach(notebooks) { notebook in
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(notebook.coverColor)
+                                .frame(width: 28, height: 28)
+                            VStack(alignment: .leading) {
+                                Text(notebook.title)
+                                    .font(.headline)
+                                Text("Last opened \(formatted(date: notebook.lastOpened))")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button("Delete", role: .destructive) {
+                                onDeleteForever(notebook)
+                            }
+                            Button("Restore") {
+                                onRestore(notebook)
+                            }
+                            .tint(.green)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Trash")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done", action: onDismiss)
+                }
+            }
+        }
+    }
+
+    private func formatted(date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+}
+
+private struct NotebookMarketplaceSheet: View {
+    var onDismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "bag")
+                    .font(.system(size: 48))
+                    .foregroundColor(.accentColor)
+                Text("Marketplace coming soon")
+                    .font(.title3.bold())
+                Text("We’re curating templates and covers you can drop directly into your notebooks.")
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Marketplace")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", action: onDismiss)
+                }
+            }
+        }
+    }
+}
+
+private enum ThemePreference {
+    private static let key = "NotebookThemePreference"
+
+    static func load() -> Bool {
+        UserDefaults.standard.bool(forKey: key)
+    }
+
+    static func save(_ isDark: Bool) {
+        UserDefaults.standard.set(isDark, forKey: key)
+    }
+}
+
+private struct LibraryIconButton: View {
+    var systemName: String
+    var label: String
+    var badge: Int? = nil
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .topTrailing) {
+                Circle()
+                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: systemName)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.primary)
+                    )
+
+                if let badge, badge > 0 {
+                    Text("\(min(badge, 99))")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.red, in: Capsule())
+                        .foregroundColor(.white)
+                        .offset(x: 10, y: -10)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
+    }
+}
+
 
 struct NewNotebookSheet: View {
     @Environment(\.dismiss) private var dismiss

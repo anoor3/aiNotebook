@@ -111,6 +111,31 @@ final class NotebookPageStore: ObservableObject {
         setImages(images, for: pageID)
     }
 
+    func deletePage(withID pageID: UUID) {
+        guard pageModels.count > 1,
+              let modelIndex = pageModels.firstIndex(where: { $0.id == pageID }),
+              let pageIndex = pages.firstIndex(where: { $0.id == pageID }) else { return }
+
+        autosaveWorkItems[pageID]?.cancel()
+        autosaveWorkItems.removeValue(forKey: pageID)
+
+        pageModels.remove(at: modelIndex)
+        pages.remove(at: pageIndex)
+        pageImages[pageID] = nil
+
+        DrawingPersistence.deletePage(notebookID: notebookID, pageID: pageID)
+
+        if activePageID == pageID {
+            if pageIndex < pages.count {
+                activePageID = pages[pageIndex].id
+            } else {
+                activePageID = pages.last?.id
+            }
+        }
+
+        retitlePages()
+    }
+
     func updateImageTransform(pageID: UUID,
                               imageID: UUID,
                               center: CGPoint,
@@ -121,6 +146,23 @@ final class NotebookPageStore: ObservableObject {
         images[index].center = center
         images[index].size = size
         images[index].rotation = rotation
+        setImages(images, for: pageID)
+    }
+
+    func updateImageContent(pageID: UUID,
+                            imageID: UUID,
+                            imageData: Data,
+                            size: CGSize) {
+        guard var images = pageImages[pageID],
+              let index = images.firstIndex(where: { $0.id == imageID }) else { return }
+        images[index].imageData = imageData
+        images[index].size = size
+        setImages(images, for: pageID)
+    }
+
+    func removeImage(pageID: UUID, imageID: UUID) {
+        guard var images = pageImages[pageID] else { return }
+        images.removeAll { $0.id == imageID }
         setImages(images, for: pageID)
     }
 

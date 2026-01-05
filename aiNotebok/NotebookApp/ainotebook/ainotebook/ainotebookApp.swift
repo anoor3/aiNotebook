@@ -4,10 +4,9 @@ import SwiftUI
 struct ainotebookApp: App {
     var body: some Scene {
         WindowGroup {
-            LibraryRootView()
+            //LibraryRootView() 
+            AppRootView()
         }
         .defaultSize(CGSize(width: 1024, height: 768))
     }
 }
-
-

@@ -2,22 +2,17 @@ import SwiftUI
 import PencilKit
 import UIKit
 
-struct CanvasAttachment: Identifiable {
-    let id: UUID
-    let imageData: Data
-    var center: CGPoint
-    var size: CGSize
-    var rotation: CGFloat
-}
-
 struct PencilCanvasView: UIViewRepresentable {
     @ObservedObject var controller: CanvasController
     var pageSize: CGSize
     var paperStyle: PaperStyle = .grid
     var attachments: [CanvasAttachment] = []
-    var editingAttachmentID: UUID?
-    var disableCanvasInteraction = false
+    @Binding var editingAttachmentID: UUID?
     var onAttachmentChanged: ((CanvasAttachment) -> Void)?
+    var onAttachmentDeleted: ((UUID) -> Void)?
+    var onAttachmentDuplicated: ((CanvasAttachment) -> Void)?
+    var onAttachmentCropped: ((CanvasAttachment) -> Void)?
+    var onAttachmentDone: (() -> Void)?
     var onAttachmentTapOutside: (() -> Void)?
 
     func makeUIView(context: Context) -> ZoomableCanvasHostView {
@@ -32,41 +27,30 @@ struct PencilCanvasView: UIViewRepresentable {
             paperStyle: paperStyle
         )
         context.coordinator.attach(hostView: host)
-        context.coordinator.attachmentsDidUpdate(attachmentsChanged: onAttachmentChanged,
-                                                 tapOutside: onAttachmentTapOutside)
+        updateOverlay(in: host)
         return host
     }
 
     func updateUIView(_ uiView: ZoomableCanvasHostView, context: Context) {
         controller.applyCurrentTool()
         uiView.updatePageSize(pageSize)
-        context.coordinator.attachmentsDidUpdate(attachmentsChanged: onAttachmentChanged,
-                                                 tapOutside: onAttachmentTapOutside)
-        uiView.updateAttachments(attachments,
-                                 editingID: editingAttachmentID,
-                                 delegate: context.coordinator)
-        uiView.setPageInteractionEnabled(!disableCanvasInteraction)
+        updateOverlay(in: uiView)
+        context.coordinator.handleToolChange(newTool: controller.tool)
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(controller: controller,
-                    onAttachmentChanged: onAttachmentChanged,
-                    onAttachmentTapOutside: onAttachmentTapOutside)
+        Coordinator(controller: controller)
     }
 
-    final class Coordinator: NSObject, PKCanvasViewDelegate, UIScrollViewDelegate, AttachmentOverlayViewDelegate {
+    final class Coordinator: NSObject, PKCanvasViewDelegate, UIScrollViewDelegate {
         private let controller: CanvasController
         private weak var hostView: ZoomableCanvasHostView?
         private var observingGesture = false
-        private var onAttachmentChanged: ((CanvasAttachment) -> Void)?
-        private var onAttachmentTapOutside: (() -> Void)?
+        private var lastTool: CanvasDrawingTool
 
-        init(controller: CanvasController,
-             onAttachmentChanged: ((CanvasAttachment) -> Void)? = nil,
-             onAttachmentTapOutside: (() -> Void)? = nil) {
+        init(controller: CanvasController) {
             self.controller = controller
-            self.onAttachmentChanged = onAttachmentChanged
-            self.onAttachmentTapOutside = onAttachmentTapOutside
+            self.lastTool = controller.tool
         }
 
         func attach(hostView: ZoomableCanvasHostView) {
@@ -75,6 +59,7 @@ struct PencilCanvasView: UIViewRepresentable {
 
             // ensure initial render is crisp
             hostView.updateInk(with: controller.canvasView.drawing)
+            handleToolChange(newTool: controller.tool)
 
             if !observingGesture {
                 controller.canvasView.drawingGestureRecognizer.addTarget(
@@ -84,17 +69,7 @@ struct PencilCanvasView: UIViewRepresentable {
                 observingGesture = true
             }
         }
-
-        func attachmentsDidUpdate(attachmentsChanged: ((CanvasAttachment) -> Void)? = nil,
-                                   tapOutside: (() -> Void)? = nil) {
-            if let attachmentsChanged {
-                onAttachmentChanged = attachmentsChanged
-            }
-            if let tapOutside {
-                onAttachmentTapOutside = tapOutside
-            }
-        }
-
+        
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             controller.updateUndoState()
             hostView?.updateInk(with: canvasView.drawing)
@@ -117,7 +92,6 @@ struct PencilCanvasView: UIViewRepresentable {
             hostView?.updateZoomScale(z)
 
             hostView?.setNeedsGridRedraw()
-            hostView?.updateInk(with: controller.canvasView.drawing)
         }
 
         func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
@@ -127,12 +101,29 @@ struct PencilCanvasView: UIViewRepresentable {
             } else {
                 hostView?.updateZoomScale(scale)
             }
-            hostView?.updateInk(with: controller.canvasView.drawing)
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             // keep overlay & ink in sync if you’re compositing
-            hostView?.updateInk(with: controller.canvasView.drawing)
+        }
+
+        func handleToolChange(newTool: CanvasDrawingTool) {
+            guard let hostView else {
+                lastTool = newTool
+                return
+            }
+
+            if lastTool != .selection, newTool == .selection {
+                hostView.beginSelection(for: controller.canvasView.drawing)
+            } else if lastTool == .selection, newTool != .selection {
+                hostView.endSelection(with: controller.canvasView.drawing)
+            }
+
+            lastTool = newTool
+        }
+
+        func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+            hostView?.updateInk(with: canvasView.drawing)
         }
 
         @objc private func handleDrawingGesture(_ gesture: UIGestureRecognizer) {
@@ -165,13 +156,31 @@ struct PencilCanvasView: UIViewRepresentable {
             }
         }
 
-        func attachmentOverlay(_ overlay: AttachmentOverlayView, didUpdate attachment: CanvasAttachment) {
-            onAttachmentChanged?(attachment)
-        }
+    }
 
-        func attachmentOverlayDidTapOutside(_ overlay: AttachmentOverlayView) {
-            onAttachmentTapOutside?()
-        }
+    private func updateOverlay(in hostView: ZoomableCanvasHostView) {
+        let overlayView = AttachmentOverlay(attachments: attachments,
+                                            pageSize: pageSize,
+                                            editingAttachmentID: $editingAttachmentID,
+                                            onUpdate: { attachment in
+                                                onAttachmentChanged?(attachment)
+                                            },
+                                            onDelete: { id in
+                                                onAttachmentDeleted?(id)
+                                            },
+                                            onDuplicate: { attachment in
+                                                onAttachmentDuplicated?(attachment)
+                                            },
+                                            onCrop: { attachment in
+                                                onAttachmentCropped?(attachment)
+                                            },
+                                            onDoneEditing: {
+                                                onAttachmentDone?()
+                                            },
+                                            onTapBackground: {
+                                                onAttachmentTapOutside?()
+                                            })
+        hostView.updateAttachmentOverlay(overlayView)
     }
 }
 
@@ -180,11 +189,12 @@ final class ZoomableCanvasHostView: UIView {
     private let contentView = UIView()
     private let backgroundView = PageBackgroundView()
     private let gridView = GridPaperCanvasView()
-    private let attachmentOverlayView = AttachmentOverlayView()
-    private let inkView = CustomInkView()
+    let attachmentContainer = UIView()
+    private let inkView: TiledInkView
     private let eraserOverlayView = EraserHighlightView()
     private let canvasView: PKCanvasView
     private let paperStyle: PaperStyle
+    private var attachmentHostingController: UIHostingController<AttachmentOverlay>?
 
     private var widthConstraint: NSLayoutConstraint?
     private var heightConstraint: NSLayoutConstraint?
@@ -195,6 +205,7 @@ final class ZoomableCanvasHostView: UIView {
     private var pageSize: CGSize {
         didSet { updatePageSizeConstraints() }
     }
+    private var selectionHiddenRect: CGRect?
 
     var zoomableContentView: UIView { contentView }
     var eraserCoordinateSpace: UIView { eraserOverlayView }
@@ -204,6 +215,7 @@ final class ZoomableCanvasHostView: UIView {
         self.canvasView = canvasView
         self.pageSize = pageSize
         self.paperStyle = paperStyle
+        self.inkView = TiledInkView(pageSize: pageSize)
         super.init(frame: .zero)
         configureHierarchy()
         updateZoomScale(1.0)
@@ -235,10 +247,9 @@ final class ZoomableCanvasHostView: UIView {
     func updatePageSize(_ newSize: CGSize) {
         guard pageSize != newSize else { return }
         pageSize = newSize
-        inkView.setNeedsDisplay()
-        lastInkRenderSize = .zero
+        inkView.updatePageSize(pageSize)
+        inkView.clearAll()
         updateInk(with: canvasView.drawing)
-        attachmentOverlayView.updateBounds(CGSize(width: newSize.width, height: newSize.height))
     }
 
     /// Geometry-only changes (corners, masks). Do NOT do resolution changes here.
@@ -260,9 +271,6 @@ final class ZoomableCanvasHostView: UIView {
     func updateRenderScale(_ zoomScale: CGFloat) {
         let effective = max(1.0, zoomScale)
         let targetScale = baseContentScale * effective
-
-        // Ink view (usually raster-based)
-        inkView.updateScale(targetScale)
 
         // Grid redraw crisp
         if abs(gridView.contentScaleFactor - targetScale) > 0.01 {
@@ -304,6 +312,19 @@ final class ZoomableCanvasHostView: UIView {
 
     func finishEraserOverlay() {
         eraserOverlayView.endStroke()
+    }
+
+    func beginSelection(for drawing: PKDrawing) {
+        let rect = expandedSelectionRect(from: drawing.bounds)
+        selectionHiddenRect = rect
+        inkView.hideTiles(in: rect)
+    }
+
+    func endSelection(with drawing: PKDrawing) {
+        let newRect = expandedSelectionRect(from: drawing.bounds)
+        let dirty = selectionHiddenRect.map { $0.union(newRect) } ?? newRect
+        inkView.showTiles(in: dirty, drawing: drawing, scale: max(1.0, currentZoomScale))
+        selectionHiddenRect = nil
     }
 
     override func layoutSubviews() {
@@ -368,7 +389,7 @@ final class ZoomableCanvasHostView: UIView {
 
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
         gridView.translatesAutoresizingMaskIntoConstraints = false
-        attachmentOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        attachmentContainer.translatesAutoresizingMaskIntoConstraints = false
         inkView.translatesAutoresizingMaskIntoConstraints = false
         eraserOverlayView.translatesAutoresizingMaskIntoConstraints = false
         canvasView.translatesAutoresizingMaskIntoConstraints = false
@@ -391,12 +412,14 @@ final class ZoomableCanvasHostView: UIView {
 
         contentView.addSubview(backgroundView)
         contentView.addSubview(gridView)
-        contentView.addSubview(attachmentOverlayView)
+        contentView.addSubview(attachmentContainer)
         contentView.addSubview(inkView)
         contentView.addSubview(eraserOverlayView)
         contentView.addSubview(canvasView)
 
-        let subviews = [backgroundView, gridView, attachmentOverlayView, inkView, eraserOverlayView, canvasView]
+        attachmentContainer.isUserInteractionEnabled = true
+        attachmentContainer.backgroundColor = .clear
+        let subviews = [backgroundView, gridView, attachmentContainer, inkView, eraserOverlayView, canvasView]
         subviews.forEach { subview in
             NSLayoutConstraint.activate([
                 subview.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -414,289 +437,35 @@ final class ZoomableCanvasHostView: UIView {
         widthConstraint?.constant = pageSize.width
         heightConstraint?.constant = pageSize.height
         layoutIfNeeded()
-        inkView.setNeedsDisplay()
+        inkView.updatePageSize(pageSize)
         updateInk(with: canvasView.drawing)
-        attachmentOverlayView.updateBounds(CGSize(width: pageSize.width, height: pageSize.height))
     }
 
-    func updateAttachments(_ attachments: [CanvasAttachment],
-                           editingID: UUID?,
-                           delegate: AttachmentOverlayViewDelegate?) {
-        attachmentOverlayView.delegate = delegate
-        attachmentOverlayView.update(attachments: attachments,
-                                     editingID: editingID,
-                                     boundsSize: pageSize)
-    }
-
-    func setPageInteractionEnabled(_ enabled: Bool) {
-        canvasView.isUserInteractionEnabled = enabled
-        scrollView.isScrollEnabled = enabled
-        scrollView.panGestureRecognizer.isEnabled = enabled
-        scrollView.pinchGestureRecognizer?.isEnabled = enabled
-    }
-}
-
-protocol AttachmentOverlayViewDelegate: AnyObject {
-    func attachmentOverlay(_ overlay: AttachmentOverlayView, didUpdate attachment: CanvasAttachment)
-    func attachmentOverlayDidTapOutside(_ overlay: AttachmentOverlayView)
-}
-
-final class AttachmentOverlayView: UIView, UIGestureRecognizerDelegate {
-    weak var delegate: AttachmentOverlayViewDelegate?
-    private var attachmentViews: [UUID: AttachmentItemView] = [:]
-    private var editingID: UUID?
-    private var pageBounds: CGRect = .zero
-    private lazy var backgroundTapGesture: UITapGestureRecognizer = {
-        let gesture = UITapGestureRecognizer(target: self, action: #selector(handleBackgroundTap(_:)))
-        gesture.cancelsTouchesInView = false
-        gesture.delegate = self
-        gesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        return gesture
-    }()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        translatesAutoresizingMaskIntoConstraints = false
-        isUserInteractionEnabled = false
-        addGestureRecognizer(backgroundTapGesture)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func updateBounds(_ size: CGSize) {
-        pageBounds = CGRect(origin: .zero, size: size)
-        attachmentViews.values.forEach { $0.pageBounds = pageBounds }
-    }
-
-    func update(attachments: [CanvasAttachment], editingID: UUID?, boundsSize: CGSize) {
-        self.editingID = editingID
-        updateBounds(boundsSize)
-        let attachmentIDs = Set(attachments.map { $0.id })
-
-        for (id, view) in attachmentViews where !attachmentIDs.contains(id) {
-            view.removeFromSuperview()
-            attachmentViews.removeValue(forKey: id)
+    private func expandedSelectionRect(from rect: CGRect) -> CGRect {
+        let padding: CGFloat = 32
+        var target = rect.isNull || rect.isEmpty ? CGRect(origin: .zero, size: pageSize) : rect
+        target = target.insetBy(dx: -padding, dy: -padding)
+        let pageRect = CGRect(origin: .zero, size: pageSize)
+        target = target.intersection(pageRect)
+        if target.isNull {
+            return pageRect
         }
-
-        for attachment in attachments {
-            let view: AttachmentItemView
-            if let existing = attachmentViews[attachment.id] {
-                view = existing
-                view.attachment = attachment
-                view.pageBounds = pageBounds
-            } else {
-                let newView = AttachmentItemView(attachment: attachment)
-                newView.pageBounds = pageBounds
-                newView.onCommitTransform = { [weak self] updated in
-                    guard let self else { return }
-                    self.delegate?.attachmentOverlay(self, didUpdate: updated)
-                }
-                attachmentViews[attachment.id] = newView
-                addSubview(newView)
-                view = newView
-            }
-
-            view.isEditing = attachment.id == editingID
-        }
-
-        let isEditing = editingID != nil
-        isUserInteractionEnabled = isEditing
-        backgroundTapGesture.isEnabled = isEditing
+        return target
     }
 
-    @objc private func handleBackgroundTap(_ gesture: UITapGestureRecognizer) {
-        guard gesture.state == .ended else { return }
-        delegate?.attachmentOverlayDidTapOutside(self)
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        guard gestureRecognizer === backgroundTapGesture,
-              let editingID,
-              let view = attachmentViews[editingID] else {
-            return true
-        }
-        let location = touch.location(in: self)
-        return !view.frame.contains(location)
-    }
-}
-
-final class AttachmentItemView: UIView, UIGestureRecognizerDelegate {
-    var attachment: CanvasAttachment {
-        didSet { applyCurrentState() }
-    }
-    var pageBounds: CGRect = .zero {
-        didSet { clampToBounds() }
-    }
-    var isEditing: Bool = false {
-        didSet { updateEditingState() }
-    }
-    var onCommitTransform: ((CanvasAttachment) -> Void)?
-
-    private let imageView = UIImageView()
-    private let borderLayer = CAShapeLayer()
-    private lazy var panGesture: UIPanGestureRecognizer = {
-        let gesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        gesture.delegate = self
-        gesture.minimumNumberOfTouches = 1
-        gesture.maximumNumberOfTouches = 1
-        gesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        return gesture
-    }()
-    private lazy var pinchGesture: UIPinchGestureRecognizer = {
-        let gesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-        gesture.delegate = self
-        gesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        return gesture
-    }()
-
-    private var initialCenter: CGPoint = .zero
-    private var initialSize: CGSize = .zero
-
-    init(attachment: CanvasAttachment) {
-        self.attachment = attachment
-        super.init(frame: .zero)
-        configure()
-        applyCurrentState()
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    private func configure() {
-        translatesAutoresizingMaskIntoConstraints = true
-        clipsToBounds = false
-        imageView.translatesAutoresizingMaskIntoConstraints = true
-        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        imageView.contentMode = .scaleAspectFit
-        imageView.clipsToBounds = true
-        addSubview(imageView)
-
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.2
-        layer.shadowOffset = CGSize(width: 0, height: 3)
-        layer.shadowRadius = 6
-
-        borderLayer.strokeColor = UIColor.systemBlue.withAlphaComponent(0.7).cgColor
-        borderLayer.fillColor = UIColor.clear.cgColor
-        borderLayer.lineWidth = 2
-        borderLayer.isHidden = true
-        layer.addSublayer(borderLayer)
-
-        addGestureRecognizer(panGesture)
-        addGestureRecognizer(pinchGesture)
-    }
-
-    private func applyCurrentState() {
-        guard let renderedImage = UIImage(data: attachment.imageData) else { return }
-        imageView.image = renderedImage
-        bounds = CGRect(origin: .zero, size: attachment.size)
-        center = attachment.center
-        transform = CGAffineTransform(rotationAngle: attachment.rotation)
-        clampToBounds()
-        updateShadowPath()
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        imageView.frame = bounds
-        updateShadowPath()
-    }
-
-    private func updateShadowPath() {
-        borderLayer.path = UIBezierPath(roundedRect: bounds, cornerRadius: 18).cgPath
-    }
-
-    private func updateEditingState() {
-        panGesture.isEnabled = isEditing
-        pinchGesture.isEnabled = isEditing
-        borderLayer.isHidden = !isEditing
-    }
-
-    private func clampToBounds() {
-        guard pageBounds.width > 0, pageBounds.height > 0 else { return }
-        var newCenter = attachment.center
-        let halfWidth = attachment.size.width / 2
-        let halfHeight = attachment.size.height / 2
-
-        newCenter.x = max(halfWidth, min(pageBounds.width - halfWidth, newCenter.x))
-        newCenter.y = max(halfHeight, min(pageBounds.height - halfHeight, newCenter.y))
-        attachment.center = newCenter
-        center = newCenter
-    }
-
-    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-        guard isEditing else { return }
-        switch gesture.state {
-        case .began:
-            initialCenter = attachment.center
-        case .changed:
-            let translation = gesture.translation(in: superview)
-            var updatedCenter = CGPoint(x: initialCenter.x + translation.x,
-                                        y: initialCenter.y + translation.y)
-            updatedCenter = clampedCenter(for: updatedCenter, size: attachment.size)
-            attachment.center = updatedCenter
-            center = updatedCenter
-        case .ended, .cancelled, .failed:
-            onCommitTransform?(attachment)
-        default:
-            break
+    func updateAttachmentOverlay(_ overlay: AttachmentOverlay) {
+        if let hosting = attachmentHostingController {
+            hosting.rootView = overlay
+        } else {
+            let hosting = UIHostingController(rootView: overlay)
+            hosting.view.backgroundColor = .clear
+            hosting.view.frame = attachmentContainer.bounds
+            hosting.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            attachmentContainer.addSubview(hosting.view)
+            attachmentHostingController = hosting
         }
     }
 
-    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        guard isEditing else { return }
-        switch gesture.state {
-        case .began:
-            initialSize = attachment.size
-            gesture.scale = 1.0
-        case .changed:
-            let aspect = initialSize.height / max(initialSize.width, 1)
-            let minDimension: CGFloat = 120
-            let maxWidth = pageBounds.width * 0.95
-            let maxHeight = pageBounds.height * 0.95
-
-            var newWidth = initialSize.width * gesture.scale
-            newWidth = max(minDimension, min(newWidth, maxWidth))
-            var newHeight = newWidth * aspect
-
-            if newHeight < minDimension {
-                newHeight = minDimension
-                newWidth = newHeight / max(aspect, 0.01)
-            }
-
-            if newHeight > maxHeight {
-                newHeight = maxHeight
-                newWidth = newHeight / max(aspect, 0.01)
-            }
-
-            attachment.size = CGSize(width: newWidth, height: newHeight)
-            bounds = CGRect(origin: .zero, size: attachment.size)
-            updateShadowPath()
-            clampToBounds()
-        case .ended, .cancelled, .failed:
-            onCommitTransform?(attachment)
-        default:
-            break
-        }
-    }
-
-    private func clampedCenter(for center: CGPoint, size: CGSize) -> CGPoint {
-        guard pageBounds.width > 0, pageBounds.height > 0 else { return center }
-        let halfWidth = size.width / 2
-        let halfHeight = size.height / 2
-        var clamped = center
-        clamped.x = max(halfWidth, min(pageBounds.width - halfWidth, clamped.x))
-        clamped.y = max(halfHeight, min(pageBounds.height - halfHeight, clamped.y))
-        return clamped
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-                           shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        true
-    }
 }
 
 final class CanvasScrollView: UIScrollView {

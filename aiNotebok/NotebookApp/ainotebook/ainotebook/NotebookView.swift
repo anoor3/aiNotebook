@@ -35,7 +35,9 @@ struct NotebookView: View {
 
                         PencilCanvasView(controller: canvasController,
                                           pageSize: CGSize(width: 1024, height: 1400),
-                                          paperStyle: .grid)
+                                          paperStyle: .grid,
+                                          attachments: [],
+                                          editingAttachmentID: .constant(nil))
                             .frame(minHeight: geometry.size.height * 3)
                             .padding(.horizontal, 24)
                             .padding(.top, 16)

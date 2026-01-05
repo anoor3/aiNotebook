@@ -124,6 +124,23 @@ final class NotebookPageStore: ObservableObject {
         setImages(images, for: pageID)
     }
 
+    func updateImageContent(pageID: UUID,
+                            imageID: UUID,
+                            imageData: Data,
+                            size: CGSize) {
+        guard var images = pageImages[pageID],
+              let index = images.firstIndex(where: { $0.id == imageID }) else { return }
+        images[index].imageData = imageData
+        images[index].size = size
+        setImages(images, for: pageID)
+    }
+
+    func removeImage(pageID: UUID, imageID: UUID) {
+        guard var images = pageImages[pageID] else { return }
+        images.removeAll { $0.id == imageID }
+        setImages(images, for: pageID)
+    }
+
     func setImages(_ images: [NotebookPageImage], for pageID: UUID) {
         pageImages[pageID] = images
         if let index = pageModels.firstIndex(where: { $0.id == pageID }) {

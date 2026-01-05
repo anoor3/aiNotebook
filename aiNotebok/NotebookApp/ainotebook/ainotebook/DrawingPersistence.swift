@@ -29,12 +29,38 @@ enum DrawingPersistence {
         return decode(from: data)
     }
 
+    static func deletePage(notebookID: UUID, pageID: UUID) {
+        let url = drawingURL(notebookID: notebookID, pageID: pageID)
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        } catch {
+            print("DrawingPersistence delete page error:", error)
+        }
+    }
+
+    static func deleteNotebook(notebookID: UUID) {
+        let directory = notebookDirectoryURL(notebookID: notebookID)
+        do {
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.removeItem(at: directory)
+            }
+        } catch {
+            print("DrawingPersistence delete notebook error:", error)
+        }
+    }
+
     private static func drawingURL(notebookID: UUID, pageID: UUID) -> URL {
+        notebookDirectoryURL(notebookID: notebookID)
+            .appendingPathComponent("\(pageID.uuidString).drawing")
+    }
+
+    private static func notebookDirectoryURL(notebookID: UUID) -> URL {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return base
             .appendingPathComponent("Drawings", isDirectory: true)
             .appendingPathComponent(notebookID.uuidString, isDirectory: true)
-            .appendingPathComponent("\(pageID.uuidString).drawing")
     }
 }

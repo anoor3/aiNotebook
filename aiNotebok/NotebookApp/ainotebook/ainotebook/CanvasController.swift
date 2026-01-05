@@ -6,8 +6,16 @@ enum CanvasDrawingTool: Equatable {
     case pen
     case highlighter
     case eraser
+    case selection
 
-    var isDrawingTool: Bool { self != .eraser }
+    var isDrawingTool: Bool {
+        switch self {
+        case .eraser, .selection:
+            return false
+        default:
+            return true
+        }
+    }
 }
 
 final class CanvasController: ObservableObject {
@@ -93,6 +101,8 @@ final class CanvasController: ObservableObject {
         switch tool {
         case .eraser:
             canvasView.tool = PKEraserTool(.vector)
+        case .selection:
+            canvasView.tool = PKLassoTool()
         case .pen:
             let color = CanvasController.enhancedColor(from: CanvasController.opaqueColor(from: strokeColor))
             canvasView.tool = PKInkingTool(.pen, color: color, width: strokeWidth)

@@ -84,10 +84,12 @@ enum NotebookExportService {
         do {
             try renderer.writePDF(to: url) { context in
                 for page in pages {
-                    context.beginPage()
-                    render(page: page,
-                           in: context.cgContext,
-                           pageSize: pageSize)
+                    autoreleasepool {
+                        context.beginPage()
+                        render(page: page,
+                               in: context.cgContext,
+                               pageSize: pageSize)
+                    }
                 }
             }
         } catch {
@@ -108,25 +110,27 @@ enum NotebookExportService {
         let renderer = UIGraphicsImageRenderer(size: pageSize, format: format)
 
         for page in pages {
-            let image = renderer.image { context in
-                render(page: page,
-                       in: context.cgContext,
-                       pageSize: pageSize)
-            }
+            try autoreleasepool {
+                let image = renderer.image { context in
+                    render(page: page,
+                           in: context.cgContext,
+                           pageSize: pageSize)
+                }
 
-            guard let data = image.pngData() else {
-                throw NotebookExportError.renderFailed
-            }
+                guard let data = image.pngData() else {
+                    throw NotebookExportError.renderFailed
+                }
 
-            let filename = "\(sanitizeFilename(notebookTitle))-page\(page.pageNumber)-\(UUID().uuidString).png"
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+                let filename = "\(sanitizeFilename(notebookTitle))-page\(page.pageNumber)-\(UUID().uuidString).png"
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
 
-            do {
-                try data.write(to: url, options: .atomic)
-            } catch {
-                throw NotebookExportError.writeFailed
+                do {
+                    try data.write(to: url, options: .atomic)
+                } catch {
+                    throw NotebookExportError.writeFailed
+                }
+                urls.append(url)
             }
-            urls.append(url)
         }
 
         return urls
@@ -240,6 +244,9 @@ enum NotebookExportService {
             let rect = CGRect(origin: .zero, size: pageSize)
             drawBackground(in: ctx.cgContext, rect: rect)
             drawPaperStyle(paperStyle, in: ctx.cgContext, rect: rect)
+            ctx.cgContext.saveGState()
+            drawAttachments(attachments, in: ctx.cgContext)
+            ctx.cgContext.restoreGState()
             if let drawing = DrawingPersistence.decode(from: drawingData) {
                 let drawingImage = drawing.image(from: rect, scale: format.scale)
                 ctx.cgContext.saveGState()
@@ -247,9 +254,6 @@ enum NotebookExportService {
                 drawingImage.draw(in: rect)
                 ctx.cgContext.restoreGState()
             }
-            ctx.cgContext.saveGState()
-            drawAttachments(attachments, in: ctx.cgContext)
-            ctx.cgContext.restoreGState()
         }
     }
 

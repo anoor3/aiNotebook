@@ -16,6 +16,7 @@ struct NotebookPageView: View {
     @ObservedObject var pageStore: NotebookPageStore
     var paperStyle: PaperStyle
     private let coverPageID = UUID()
+    private let notebookID: UUID
     private static let penPalette: [UIColor] = [
         UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0),
         UIColor(red: 0.16, green: 0.48, blue: 0.32, alpha: 1.0),
@@ -34,6 +35,7 @@ struct NotebookPageView: View {
     private static let thicknessOptions: [CGFloat] = [0.7, 3.0, 6.0]
     private let scrollSpaceName = "NotebookScroll"
     private let basePageSize = CGSize(width: 800, height: 1000)
+    private let shapePasteboardType = "com.ainotebook.shapeKind"
 
     @State private var isLoadingNextPage = false
     @State private var currentStrokeColor: UIColor
@@ -62,6 +64,7 @@ struct NotebookPageView: View {
     @State private var isCoverActive = false
     @State private var didApplyInitialPage = false
     @State private var showImageOptions = false
+    @State private var showShapesSheet = false
     @State private var imagePickerSource: ImagePickerSource?
     @State private var pendingImagePageID: UUID?
     @State private var showAIChat = false
@@ -70,6 +73,7 @@ struct NotebookPageView: View {
     @State private var aiPanelDragOffset: CGFloat = 0
     /// Holds the currently editable image so PencilKit interaction can be paused while the finger manipulates it.
     @State private var editingAttachmentContext: EditingAttachmentContext?
+    @State private var croppingAttachmentContext: CroppingAttachmentContext?
     @State private var showExportSheet = false
     @State private var exportSelection: Set<UUID> = []
     @State private var exportFormat: NotebookExportFormat = .pdf
@@ -77,11 +81,21 @@ struct NotebookPageView: View {
     @State private var exportErrorMessage: String?
     @State private var shareURLs: [URL] = []
     @State private var isPresentingShareSheet = false
+    @State private var showVoiceRecorderHUD = false
+    @State private var showRecordingHistory = false
+    @State private var showCalculator = false
+    @ObservedObject private var voiceRecorder: VoiceRecorderManager
+    @State private var shapeAttachmentKinds: [UUID: ShapeTemplate.Kind] = [:]
+    @State private var pasteboardHasImage = UIPasteboard.general.hasImages
 
-    init(paperStyle: PaperStyle = .grid, pageStore: NotebookPageStore, notebook: Binding<Notebook>) {
+    init(paperStyle: PaperStyle = .grid,
+         pageStore: NotebookPageStore,
+         notebook: Binding<Notebook>,
+         voiceRecorder: VoiceRecorderManager) {
         self.paperStyle = paperStyle
         self._pageStore = ObservedObject(wrappedValue: pageStore)
         self._notebook = notebook
+        self.notebookID = notebook.wrappedValue.id
         let defaultColor = Self.penPalette[0]
         let defaultHighlighter = Self.highlighterPalette[0]
         let defaultWidth = Self.thicknessOptions[1]
@@ -89,15 +103,17 @@ struct NotebookPageView: View {
         _penStrokeColor = State(initialValue: defaultColor)
         _highlighterStrokeColor = State(initialValue: defaultHighlighter)
         _currentStrokeWidth = State(initialValue: defaultWidth)
+        _voiceRecorder = ObservedObject(wrappedValue: voiceRecorder)
+        if let savedMessages = AIChatPersistence.load(for: notebook.wrappedValue.id), !savedMessages.isEmpty {
+            _aiMessages = State(initialValue: savedMessages)
+        }
     }
 
     var body: some View {
         GeometryReader { geometry in
             let pageSize = basePageSize
-            let pageScale = pageScale(for: geometry.size.width)
-            let scaledSize = CGSize(width: pageSize.width * pageScale,
-                                    height: pageSize.height * pageScale)
-            let scaledHeight = scaledSize.height
+            let pageScale = self.pageScale(for: geometry.size.width)
+            let scaledHeight = pageSize.height * pageScale
             let viewportHeight = max(min(scaledHeight + 60, geometry.size.height - 80), 420)
 
             ZStack(alignment: .top) {
@@ -111,23 +127,19 @@ struct NotebookPageView: View {
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
                             LazyVStack(spacing: 40) {
-                                dropTarget(pageID: coverPageID, viewSize: scaledSize) {
-                                    coverPage(pageSize: pageSize, viewportHeight: viewportHeight)
-                                        .scaleEffect(pageScale, anchor: .center)
-                                        .frame(width: scaledSize.width,
-                                               height: scaledSize.height)
-                                }
+                                coverPage(pageSize: pageSize, viewportHeight: viewportHeight)
+                                    .frame(width: pageSize.width, height: pageSize.height)
+                                    .scaleEffect(pageScale, anchor: .center)
+                                    .frame(width: pageSize.width * pageScale,
+                                           height: pageSize.height * pageScale,
+                                           alignment: .center)
                                     .id(coverPageID)
 
                                 ForEach(pageStore.pages, id: \.id) { controller in
-                                    dropTarget(pageID: controller.id, viewSize: scaledSize) {
-                                        notebookPage(for: controller,
-                                                     pageSize: pageSize,
-                                                         viewportHeight: viewportHeight)
-                                            .scaleEffect(pageScale, anchor: .center)
-                                            .frame(width: scaledSize.width,
-                                                   height: scaledSize.height)
-                                    }
+                                    notebookPage(for: controller,
+                                                 pageSize: pageSize,
+                                                 viewportHeight: viewportHeight,
+                                                 pageScale: pageScale)
                                         .frame(maxWidth: .infinity)
                                         .id(controller.id)
                                 }
@@ -144,6 +156,7 @@ struct NotebookPageView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .onAppear {
                             scrollProxy = proxy
+                            scrollToActivePage(animated: false)
                         }
                     }
                 }
@@ -200,12 +213,24 @@ struct NotebookPageView: View {
                     .transition(.opacity)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in
+            refreshPasteboardState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            let orientation = UIDevice.current.orientation
+            guard orientation.isValidInterfaceOrientation else { return }
+            scrollToActivePage(animated: false)
+        }
+        .onChange(of: currentStrokeColor) { newColor in
+            updateSelectedAttachmentColor(with: newColor)
+        }
         .overlay(alignment: .leading) {
             if showAIChat {
                 let panelWidth = min(520, UIScreen.main.bounds.width * 0.5)
                 AIChatSheet(messages: $aiMessages,
                             queryMode: $aiQueryMode,
-                            onClose: { showAIChat = false })
+                            onClose: { showAIChat = false },
+                            onNewChat: resetAIChat)
                     .frame(width: panelWidth)
                     .frame(maxHeight: .infinity)
                     .padding(.top, 80)
@@ -234,6 +259,9 @@ struct NotebookPageView: View {
                 aiPanelDragOffset = 0
             }
         }
+        .onChange(of: aiMessages) { messages in
+            AIChatPersistence.save(messages, for: notebookID)
+        }
         .onChange(of: customColor) { _ in
             applyCustomColorSelection()
         }
@@ -243,13 +271,7 @@ struct NotebookPageView: View {
                 notebook.currentPageIndex = index
                 SessionStatePersistence.save(notebookID: notebook.id, pageIndex: index)
             }
-            isProgrammaticJump = true
-            withAnimation {
-                scrollProxy?.scrollTo(id, anchor: .top)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                isProgrammaticJump = false
-            }
+            scrollToActivePage()
             showPageIndicatorTemporary()
         }
         .onAppear {
@@ -268,7 +290,7 @@ struct NotebookPageView: View {
                                 exportSelection.removeAll()
                             },
                             onExport: startExport)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
         }
         .sheet(isPresented: $isPresentingShareSheet, onDismiss: cleanupShareFiles) {
             ShareSheet(activityItems: shareURLs)
@@ -290,59 +312,156 @@ struct NotebookPageView: View {
                 cancelImageInsertion()
             }
         }
+        .sheet(item: $croppingAttachmentContext) { context in
+            if let image = UIImage(data: context.attachment.imageData) {
+                AttachmentCropSheet(image: image,
+                                    onCancel: { croppingAttachmentContext = nil },
+                                    onSave: { cropped in
+                                        handleCroppedImage(cropped, for: context)
+                                        croppingAttachmentContext = nil
+                                    })
+            } else {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                    Text("Unable to load image for cropping.")
+                        .multilineTextAlignment(.center)
+                    Button("Close") {
+                        croppingAttachmentContext = nil
+                    }
+                }
+                .padding()
+            }
+        }
+        .sheet(isPresented: $showShapesSheet) {
+            ShapePickerSheet(onSelect: { shape in
+                insertShape(shape)
+                showShapesSheet = false
+            }, onClose: {
+                showShapesSheet = false
+            })
+        }
         .onReceive(NotificationCenter.default.publisher(for: .notebookRequestExport)) { _ in
             presentExportOptions()
+        }
+        .overlay(alignment: .topTrailing) {
+            let currentPageID = pageStore.activePageID ?? pageStore.pages.first?.id
+            let currentPageLabel = pageLabel(for: currentPageID)
+            VStack(alignment: .trailing, spacing: 10) {
+                if voiceRecorder.isRecording {
+                    VoiceRecordingIndicator(duration: voiceRecorder.recordingDuration) {
+                        voiceRecorder.stopRecording()
+                    }
+                }
+
+                if showVoiceRecorderHUD {
+                    VoiceRecorderHUD(recorder: voiceRecorder,
+                                     currentPageID: currentPageID,
+                                     pageLabel: currentPageLabel,
+                                     onShowHistory: { showRecordingHistory = true },
+                                     onClose: { showVoiceRecorderHUD = false })
+                }
+            }
+            .padding(.trailing, 24)
+            .padding(.top, 80)
+        }
+        .onChange(of: voiceRecorder.isRecording) { isRecording in
+            if isRecording {
+                showVoiceRecorderHUD = false
+            }
+        }
+        .sheet(isPresented: $showRecordingHistory) {
+            VoiceRecordingHistorySheet(recorder: voiceRecorder,
+                                       pageStore: pageStore,
+                                       onClose: { showRecordingHistory = false })
+                .presentationDetents([.large])
+        }
+        .overlay {
+            if showCalculator {
+                ScientificCalculatorView(onClose: { showCalculator = false })
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(5)
+            }
+        }
+        .onDisappear {
+            voiceRecorder.stopRecordingIfNeeded()
         }
     }
 
     /// Compact toolbar styled like native iPadOS tools.
     private var toolbar: some View {
-        HStack(spacing: 18) {
-            toolButton(systemName: "pencil.tip", isActive: currentTool == .pen) {
-                selectTool(.pen)
+        HStack(spacing: 12) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 18) {
+                    toolButton(systemName: "pencil.tip", isActive: currentTool == .pen) {
+                        selectTool(.pen)
+                    }
+
+                    toolButton(isActive: currentTool == .highlighter, action: { selectTool(.highlighter) }) {
+                        HighlighterIcon(isActive: currentTool == .highlighter)
+                    }
+
+                    toolButton(systemName: "eraser", isActive: currentTool == .eraser) {
+                        selectTool(.eraser)
+                    }
+
+                    toolButton(systemName: "lasso", isActive: currentTool == .selection) {
+                        selectTool(.selection)
+                    }
+
+                    Divider().frame(height: 20)
+
+                    colorButtons
+
+                    Divider().frame(height: 20)
+
+                    thicknessButtons
+
+                    Divider().frame(height: 20)
+
+                    Button(action: { showCalculator = true }) {
+                        Image(systemName: "function")
+                    }
+                    .buttonStyle(ToolbarButtonStyle(isActive: false))
+                }
+                .padding(.horizontal, 4)
             }
 
-            toolButton(isActive: currentTool == .highlighter, action: { selectTool(.highlighter) }) {
-                HighlighterIcon(isActive: currentTool == .highlighter)
+            HStack(spacing: 12) {
+                Button(action: { activePageController?.undo() }) {
+                    Image(systemName: "arrow.uturn.backward")
+                }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
+                .disabled(!(activePageController?.canUndo ?? false))
+                .opacity((activePageController?.canUndo ?? false) ? 1.0 : 0.4)
+
+                Button(action: { activePageController?.redo() }) {
+                    Image(systemName: "arrow.uturn.forward")
+                }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
+                .disabled(!(activePageController?.canRedo ?? false))
+                .opacity((activePageController?.canRedo ?? false) ? 1.0 : 0.4)
+
+                Button(action: presentImageOptions) {
+                    Image(systemName: "photo.on.rectangle")
+                }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
+
+                Button(action: { showShapesSheet = true }) {
+                    Image(systemName: "square.on.circle")
+                }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
+
+                Button(action: { showVoiceRecorderHUD.toggle() }) {
+                    Image(systemName: "waveform.and.mic")
+                }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
+
+                Button(action: { showAIChat = true }) {
+                    AISparkleGlyph()
+                }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
             }
-
-            toolButton(systemName: "eraser", isActive: currentTool == .eraser) {
-                selectTool(.eraser)
-            }
-
-            Divider().frame(height: 20)
-
-            colorButtons
-
-            Divider().frame(height: 20)
-
-            thicknessButtons
-
-            Spacer()
-
-            Button(action: { activePageController?.undo() }) {
-                Image(systemName: "arrow.uturn.backward")
-            }
-            .buttonStyle(ToolbarButtonStyle(isActive: false))
-            .disabled(!(activePageController?.canUndo ?? false))
-            .opacity((activePageController?.canUndo ?? false) ? 1.0 : 0.4)
-
-            Button(action: { activePageController?.redo() }) {
-                Image(systemName: "arrow.uturn.forward")
-            }
-            .buttonStyle(ToolbarButtonStyle(isActive: false))
-            .disabled(!(activePageController?.canRedo ?? false))
-            .opacity((activePageController?.canRedo ?? false) ? 1.0 : 0.4)
-
-            Button(action: presentImageOptions) {
-                Image(systemName: "photo.on.rectangle")
-            }
-            .buttonStyle(ToolbarButtonStyle(isActive: false))
-
-            Button(action: { showAIChat = true }) {
-                AISparkleGlyph()
-            }
-            .buttonStyle(ToolbarButtonStyle(isActive: false))
         }
         .frame(height: 44)
         .padding(10)
@@ -355,7 +474,7 @@ struct NotebookPageView: View {
 
         return HStack(spacing: 12) {
             ForEach(Array(palette.enumerated()), id: \.offset) { (_, color) in
-                let isSelected = currentStrokeColor == color && displayedDrawingTool != .eraser
+                let isSelected = currentStrokeColor == color && displayedDrawingTool.isDrawingTool
                 Button(action: {
                     let targetTool = displayedDrawingTool
                     currentStrokeColor = color
@@ -392,7 +511,7 @@ struct NotebookPageView: View {
     private var customColorButton: some View {
         let customUIColor = UIColor(customColor)
         let activeTool = displayedDrawingTool
-        let isSelected = currentStrokeColor == customUIColor && activeTool != .eraser
+        let isSelected = currentStrokeColor == customUIColor && activeTool.isDrawingTool
 
         return Button(action: {
             let targetTool = activeTool
@@ -415,9 +534,9 @@ struct NotebookPageView: View {
     private var thicknessButtons: some View {
         HStack(spacing: 10) {
             ForEach(Self.thicknessOptions, id: \.self) { width in
-                let isSelected = abs(currentStrokeWidth - width) < 0.1 && currentTool != .eraser
+                let isSelected = abs(currentStrokeWidth - width) < 0.1 && displayedDrawingTool.isDrawingTool
                 Button(action: {
-                    let targetTool = currentTool == .eraser ? lastDrawingTool : currentTool
+                    let targetTool = displayedDrawingTool
                     currentStrokeWidth = width
                     currentTool = targetTool
                     lastDrawingTool = targetTool
@@ -436,7 +555,12 @@ struct NotebookPageView: View {
     }
 
     private var displayedDrawingTool: CanvasDrawingTool {
-        currentTool == .eraser ? lastDrawingTool : currentTool
+        switch currentTool {
+        case .eraser, .selection:
+            return lastDrawingTool
+        default:
+            return currentTool
+        }
     }
 
     private func toolButton<Content: View>(isActive: Bool,
@@ -457,7 +581,7 @@ struct NotebookPageView: View {
 
     private func selectTool(_ tool: CanvasDrawingTool) {
         currentTool = tool
-        if tool != .eraser {
+        if tool.isDrawingTool {
             lastDrawingTool = tool
         }
         if tool.isDrawingTool {
@@ -502,7 +626,6 @@ struct NotebookPageView: View {
 
     private func coverPage(pageSize: CGSize, viewportHeight: CGFloat) -> some View {
         NotebookCoverPage(notebook: $notebook)
-            .frame(width: pageSize.width, height: pageSize.height)
             .shadow(color: Color.black.opacity(0.08), radius: 18, y: 8)
             .padding(.horizontal, 4)
             .background(
@@ -513,35 +636,75 @@ struct NotebookPageView: View {
             )
     }
 
-    private func notebookPage(for controller: CanvasController, pageSize: CGSize, viewportHeight: CGFloat) -> some View {
+    private func notebookPage(for controller: CanvasController,
+                              pageSize: CGSize,
+                              viewportHeight: CGFloat,
+                              pageScale: CGFloat) -> some View {
         let pageID = controller.id
-        let isEditingThisPage = editingAttachmentContext?.pageID == pageID
-        let editingID = isEditingThisPage ? editingAttachmentContext?.attachmentID : nil
-
-        return ZStack(alignment: .topTrailing) {
-            // PencilCanvasView keeps all PencilKit logic untouched while the attachment overlay lives inside the UIKit host.
-            PencilCanvasView(controller: controller,
-                             pageSize: pageSize,
-                             paperStyle: paperStyle,
-                             attachments: canvasAttachments(for: pageID),
-                             editingAttachmentID: editingID,
-                             disableCanvasInteraction: isEditingThisPage,
-                             onAttachmentChanged: { updated in
-                                 handleAttachmentUpdate(updated, for: pageID)
-                             },
-                             onAttachmentTapOutside: {
-                                 handleTapOutsideEditing(for: pageID)
-                             })
-
-            if isEditingThisPage {
-                Button("Done") {
-                    finalizeImageEditing()
+        let attachments = canvasAttachments(for: pageID)
+        let binding = Binding<UUID?>(
+            get: {
+                guard editingAttachmentContext?.pageID == pageID else { return nil }
+                return editingAttachmentContext?.attachmentID
+            },
+            set: { newValue in
+                if let id = newValue {
+                    editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: id)
+                } else if editingAttachmentContext?.pageID == pageID {
+                    editingAttachmentContext = nil
                 }
-                .buttonStyle(.borderedProminent)
-                .padding(16)
             }
+        )
+
+        let pageContent = PencilCanvasView(controller: controller,
+                                           pageSize: pageSize,
+                                           paperStyle: paperStyle,
+                                           attachments: attachments,
+                                           editingAttachmentID: binding,
+                                           onAttachmentChanged: { updated in
+                                               handleAttachmentUpdate(updated, for: pageID)
+                                           },
+                                           onAttachmentDeleted: { imageID in
+                                               deleteAttachment(imageID, for: pageID)
+                                           },
+                                           onAttachmentDuplicated: { attachment in
+                                               duplicateAttachment(attachment, for: pageID, pageSize: pageSize)
+                                           },
+                                           onAttachmentCopied: { attachment in
+                                               copyAttachment(attachment)
+                                           },
+                                           onAttachmentCropped: { attachment in
+                                               startCropping(attachment, for: pageID, pageSize: pageSize)
+                                           },
+                                           onAttachmentDone: {
+                                               finalizeImageEditing()
+                                           },
+                                           onAttachmentTapOutside: {
+                                               handleTapOutsideEditing(for: pageID)
+                                           })
+        .frame(width: pageSize.width, height: pageSize.height)
+        .contentShape(Rectangle())
+        .gesture(pageTapGesture(attachments: attachments,
+                                pageID: pageID,
+                                pageSize: pageSize))
+        .onDrop(of: [UTType.image.identifier], delegate: AttachmentDropDelegate(pageSize: pageSize) { location, image in
+            handleDroppedImage(image,
+                               at: location,
+                               pageSize: pageSize,
+                               pageID: pageID)
+        })
+        .onAppear {
+            setCanvasInteraction(enabled: binding.wrappedValue == nil, for: controller)
         }
-            .frame(width: pageSize.width, height: pageSize.height)
+        .onChange(of: binding.wrappedValue) { newValue in
+            setCanvasInteraction(enabled: newValue == nil, for: controller)
+        }
+
+        return pageContent
+            .scaleEffect(pageScale, anchor: .center)
+            .frame(width: pageSize.width * pageScale,
+                   height: pageSize.height * pageScale,
+                   alignment: .center)
             .shadow(color: Color.black.opacity(0.08), radius: 18, y: 8)
             .padding(.horizontal, 4)
             .background(
@@ -552,12 +715,98 @@ struct NotebookPageView: View {
             )
     }
 
+    private func pageTapGesture(attachments: [CanvasAttachment],
+                                pageID: UUID,
+                                pageSize: CGSize) -> some Gesture {
+        SpatialTapGesture()
+            .onEnded { value in
+                handlePageTap(at: value.location,
+                              attachments: attachments,
+                              pageID: pageID,
+                              pageSize: pageSize)
+            }
+    }
+
+    private func handlePageTap(at location: CGPoint,
+                               attachments: [CanvasAttachment],
+                               pageID: UUID,
+                               pageSize: CGSize) {
+        if let editing = editingAttachmentContext {
+            guard editing.pageID == pageID else { return }
+            if let target = attachment(containing: location,
+                                       in: attachments,
+                                       pageSize: pageSize) {
+                editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: target.id)
+            } else {
+                handleTapOutsideEditing(for: pageID)
+            }
+            return
+        }
+
+        guard let target = attachment(containing: location, in: attachments, pageSize: pageSize) else {
+            return
+        }
+        editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: target.id)
+    }
+
+    private func attachment(containing point: CGPoint,
+                            in attachments: [CanvasAttachment],
+                            pageSize: CGSize) -> CanvasAttachment? {
+        guard point.x >= 0,
+              point.y >= 0,
+              point.x <= pageSize.width,
+              point.y <= pageSize.height else { return nil }
+
+        for attachment in attachments.reversed() {
+            if attachment.isLocked { continue }
+            if attachmentContains(point, attachment: attachment) {
+                return attachment
+            }
+        }
+        return nil
+    }
+
+    private func attachmentContains(_ point: CGPoint, attachment: CanvasAttachment) -> Bool {
+        let translated = CGPoint(x: point.x - attachment.center.x,
+                                 y: point.y - attachment.center.y)
+        let rotation = CGAffineTransform(rotationAngle: -attachment.rotation)
+        let aligned = translated.applying(rotation)
+        let rect = CGRect(x: -attachment.size.width / 2,
+                          y: -attachment.size.height / 2,
+                          width: attachment.size.width,
+                          height: attachment.size.height)
+        return rect.contains(aligned)
+    }
+
     private func showPageIndicatorTemporary() {
         showPageIndicator = true
         pageIndicatorWorkItem?.cancel()
         let workItem = DispatchWorkItem { showPageIndicator = false }
         pageIndicatorWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: workItem)
+    }
+
+    private func setCanvasInteraction(enabled: Bool, for controller: CanvasController) {
+        controller.canvasView.isUserInteractionEnabled = enabled
+    }
+
+    private func scrollToActivePage(animated: Bool = true) {
+        guard let proxy = scrollProxy,
+              let targetID = pageStore.activePageID else { return }
+        isProgrammaticJump = true
+        let scrollAction = {
+            proxy.scrollTo(targetID, anchor: .top)
+        }
+        if animated {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                scrollAction()
+            }
+        } else {
+            scrollAction()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            isProgrammaticJump = false
+        }
     }
 
     private func distanceToCenter(for proxy: GeometryProxy, viewportHeight: CGFloat) -> CGFloat {
@@ -581,7 +830,7 @@ struct NotebookPageView: View {
             return penStrokeColor
         case .highlighter:
             return highlighterStrokeColor
-        case .eraser:
+        case .eraser, .selection:
             return penStrokeColor
         }
     }
@@ -592,7 +841,7 @@ struct NotebookPageView: View {
             penStrokeColor = color
         case .highlighter:
             highlighterStrokeColor = color
-        case .eraser:
+        case .eraser, .selection:
             break
         }
     }
@@ -655,68 +904,6 @@ struct NotebookPageView: View {
         return min(max(scale, 1.0), 1.25)
     }
 
-    @ViewBuilder
-    private func dropTarget<Content: View>(pageID: UUID,
-                                           viewSize: CGSize,
-                                           @ViewBuilder content: () -> Content) -> some View {
-        content()
-            .contentShape(Rectangle())
-            .onDrop(of: [.image, .fileURL, .url], isTargeted: nil) { providers, location in
-                handleDropProviders(providers,
-                                    location: location,
-                                    pageID: pageID,
-                                    viewSize: viewSize)
-                return providers.contains { supportedProvider($0) }
-            }
-    }
-
-    private func handleDropProviders(_ providers: [NSItemProvider],
-                                     location: CGPoint,
-                                     pageID: UUID,
-                                     viewSize: CGSize) {
-        var handled = false
-        for provider in providers {
-            if provider.canLoadObject(ofClass: UIImage.self) {
-                handled = true
-                loadImage(from: provider, location: location, pageID: pageID, viewSize: viewSize)
-            } else if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                handled = true
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    let url = (item as? URL)
-                        ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
-                    guard let url else { return }
-                    loadImage(fromFileURL: url) { image in
-                        if let image {
-                            insertDroppedImage(image, at: location, pageID: pageID, viewSize: viewSize)
-                        }
-                    }
-                }
-            } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                handled = true
-                provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { item, _ in
-                    let url = (item as? URL)
-                        ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
-                    guard let url,
-                          let scheme = url.scheme?.lowercased(),
-                          scheme == "http" || scheme == "https" else { return }
-                    loadRemoteImage(from: url,
-                                    location: location,
-                                    pageID: pageID,
-                                    viewSize: viewSize)
-                }
-            }
-        }
-        if !handled {
-            feedbackForUnsupportedDrop()
-        }
-    }
-
-    private func supportedProvider(_ provider: NSItemProvider) -> Bool {
-        provider.canLoadObject(ofClass: UIImage.self)
-        || provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-        || provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
-    }
-
     private func presentImageOptions() {
         pendingImagePageID = activePageController?.id ?? pageStore.pages.first?.id
         showImageOptions = pendingImagePageID != nil
@@ -748,20 +935,130 @@ struct NotebookPageView: View {
             return
         }
         pendingImagePageID = nil
-
-        guard let data = image.pngData() ?? image.jpegData(compressionQuality: 0.9) else {
+        guard insertImage(image,
+                           on: pageID,
+                           pageSize: basePageSize,
+                           preferredCenter: nil) != nil else {
             cancelImageInsertion()
             return
         }
-        let size = defaultImageSize(for: image)
-        let center = CGPoint(x: basePageSize.width / 2, y: basePageSize.height / 2)
-        let attachment = NotebookPageImage(imageData: data,
-                                           center: center,
-                                           size: size,
-                                           rotation: 0)
-        pageStore.addImage(attachment, to: pageID)
-        editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: attachment.id)
         imagePickerSource = nil
+    }
+
+    private func insertShape(_ kind: ShapeTemplate.Kind) {
+        guard let pageID = activePageController?.id ?? pageStore.pages.first?.id else { return }
+        let color = currentStrokeColor
+        let image = renderedShapeImage(for: kind, color: color)
+        if let newID = insertImage(image,
+                                   on: pageID,
+                                   pageSize: basePageSize,
+                                   preferredCenter: nil) {
+            shapeAttachmentKinds[newID] = kind
+        }
+    }
+
+    private func pasteFromClipboard() {
+        guard pasteboardHasImage else { return }
+        guard let pageID = activePageController?.id ?? pageStore.pages.first?.id else { return }
+        guard let image = UIPasteboard.general.image else { return }
+        if let newID = insertImage(image,
+                                   on: pageID,
+                                   pageSize: basePageSize,
+                                   preferredCenter: nil) {
+            if let kindRaw = UIPasteboard.general.value(forPasteboardType: shapePasteboardType) as? String,
+               let kind = ShapeTemplate.Kind(rawValue: kindRaw) {
+                shapeAttachmentKinds[newID] = kind
+            }
+        }
+        refreshPasteboardState()
+    }
+
+    private func refreshPasteboardState() {
+        pasteboardHasImage = UIPasteboard.general.hasImages
+    }
+
+    private func renderedShapeImage(for kind: ShapeTemplate.Kind, color: UIColor) -> UIImage {
+        let canvasSize = CGSize(width: 720, height: 720)
+        let inset: CGFloat = 140
+        let rect = CGRect(origin: .zero, size: canvasSize).insetBy(dx: inset, dy: inset)
+        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: UIGraphicsImageRendererFormat.default())
+        let strokeColor = color
+        let lineWidth: CGFloat = 10
+
+        return renderer.image { ctx in
+            ctx.cgContext.setFillColor(UIColor.clear.cgColor)
+            ctx.cgContext.setStrokeColor(strokeColor.cgColor)
+            ctx.cgContext.setLineWidth(lineWidth)
+            ctx.cgContext.setLineCap(.round)
+            ctx.cgContext.setLineJoin(.round)
+
+            switch kind {
+            case .rectangle:
+                let path = UIBezierPath(rect: rect)
+                strokeColor.setStroke()
+                path.lineWidth = lineWidth
+                path.stroke()
+            case .square:
+                let side = min(rect.width, rect.height)
+                let squareRect = CGRect(x: rect.midX - side / 2,
+                                        y: rect.midY - side / 2,
+                                        width: side,
+                                        height: side)
+                let path = UIBezierPath(rect: squareRect)
+                strokeColor.setStroke()
+                path.lineWidth = lineWidth
+                path.stroke()
+            case .roundedRectangle:
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: 90)
+                strokeColor.setStroke()
+                path.lineWidth = lineWidth
+                path.stroke()
+            case .circle:
+                let path = UIBezierPath(ovalIn: rect)
+                strokeColor.setStroke()
+                path.lineWidth = lineWidth
+                path.stroke()
+            case .triangle:
+                let path = UIBezierPath()
+                path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+                path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+                path.close()
+                strokeColor.setStroke()
+                path.lineWidth = lineWidth
+                path.stroke()
+            case .line:
+                ctx.cgContext.move(to: CGPoint(x: rect.minX, y: rect.midY))
+                ctx.cgContext.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+                ctx.cgContext.strokePath()
+            case .arrow:
+                let start = CGPoint(x: rect.minX, y: rect.midY)
+                let end = CGPoint(x: rect.maxX - 90, y: rect.midY)
+                ctx.cgContext.move(to: start)
+                ctx.cgContext.addLine(to: end)
+                ctx.cgContext.strokePath()
+
+                let head = UIBezierPath()
+                head.move(to: CGPoint(x: rect.maxX - 90, y: rect.midY - 60))
+                head.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+                head.addLine(to: CGPoint(x: rect.maxX - 90, y: rect.midY + 60))
+                strokeColor.setStroke()
+                head.lineWidth = lineWidth
+                head.stroke()
+            }
+        }
+    }
+
+    private func updateSelectedAttachmentColor(with color: UIColor) {
+        guard let context = editingAttachmentContext,
+              let kind = shapeAttachmentKinds[context.attachmentID] else { return }
+        let image = renderedShapeImage(for: kind, color: color)
+        guard let data = image.pngData() else { return }
+        guard let model = pageStore.images(for: context.pageID).first(where: { $0.id == context.attachmentID }) else { return }
+        pageStore.updateImageContent(pageID: context.pageID,
+                                     imageID: context.attachmentID,
+                                     imageData: data,
+                                     size: model.size)
     }
 
     private func defaultImageSize(for image: UIImage) -> CGSize {
@@ -787,7 +1084,8 @@ struct NotebookPageView: View {
                              imageData: model.imageData,
                              center: model.center,
                              size: model.size,
-                             rotation: CGFloat(model.rotation))
+                             rotation: CGFloat(model.rotation),
+                             isLocked: model.isLocked)
         }
     }
 
@@ -797,6 +1095,139 @@ struct NotebookPageView: View {
                                        center: attachment.center,
                                        size: attachment.size,
                                        rotation: Double(attachment.rotation))
+    }
+
+    private func deleteAttachment(_ imageID: UUID, for pageID: UUID) {
+        pageStore.removeImage(pageID: pageID, imageID: imageID)
+        shapeAttachmentKinds.removeValue(forKey: imageID)
+        if editingAttachmentContext?.pageID == pageID,
+           editingAttachmentContext?.attachmentID == imageID {
+            editingAttachmentContext = nil
+        }
+    }
+
+    private func duplicateAttachment(_ attachment: CanvasAttachment,
+                                     for pageID: UUID,
+                                     pageSize: CGSize) {
+        let offset: CGFloat = 36
+        var newCenter = CGPoint(x: attachment.center.x + offset,
+                                y: attachment.center.y + offset)
+        newCenter = clampedCenter(newCenter, for: attachment.size, pageSize: pageSize)
+
+        let duplicate = NotebookPageImage(imageData: attachment.imageData,
+                                          center: newCenter,
+                                          size: attachment.size,
+                                          rotation: Double(attachment.rotation),
+                                          isLocked: attachment.isLocked)
+        pageStore.addImage(duplicate, to: pageID)
+        editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: duplicate.id)
+        if let kind = shapeAttachmentKinds[attachment.id] {
+            shapeAttachmentKinds[duplicate.id] = kind
+        }
+    }
+
+    private func copyAttachment(_ attachment: CanvasAttachment) {
+        guard let image = UIImage(data: attachment.imageData) else { return }
+        var item: [String: Any] = [:]
+        if let data = image.pngData() {
+            item[UTType.png.identifier] = data
+        }
+        if let kind = shapeAttachmentKinds[attachment.id] {
+            item[shapePasteboardType] = kind.rawValue
+        }
+        UIPasteboard.general.setItems([item], options: [:])
+        refreshPasteboardState()
+    }
+
+    private func startCropping(_ attachment: CanvasAttachment,
+                               for pageID: UUID,
+                               pageSize: CGSize) {
+        guard UIImage(data: attachment.imageData) != nil else { return }
+        croppingAttachmentContext = CroppingAttachmentContext(pageID: pageID,
+                                                             attachment: attachment,
+                                                             pageSize: pageSize)
+    }
+
+    private func handleCroppedImage(_ image: UIImage,
+                                    for context: CroppingAttachmentContext) {
+        guard let data = image.pngData() ?? image.jpegData(compressionQuality: 0.9) else { return }
+        let targetWidth = context.attachment.size.width
+        let newSize = resizedSize(for: image.size,
+                                  targetWidth: targetWidth,
+                                  pageSize: context.pageSize)
+        pageStore.updateImageContent(pageID: context.pageID,
+                                     imageID: context.attachment.id,
+                                     imageData: data,
+                                     size: newSize)
+    }
+
+    private func handleDroppedImage(_ image: UIImage, at location: CGPoint, pageSize: CGSize, pageID: UUID) {
+        _ = insertImage(image,
+                        on: pageID,
+                        pageSize: pageSize,
+                        preferredCenter: location)
+    }
+
+    @discardableResult
+    private func insertImage(_ image: UIImage,
+                             on pageID: UUID,
+                             pageSize: CGSize,
+                             preferredCenter: CGPoint?) -> UUID? {
+        guard let data = image.pngData() ?? image.jpegData(compressionQuality: 0.9) else {
+            return nil
+        }
+        let size = defaultImageSize(for: image)
+        let center: CGPoint
+        if let preferredCenter {
+            center = clampedCenter(preferredCenter, for: size, pageSize: pageSize)
+        } else {
+            center = CGPoint(x: pageSize.width / 2, y: pageSize.height / 2)
+        }
+        let attachment = NotebookPageImage(imageData: data,
+                                           center: center,
+                                           size: size,
+                                           rotation: 0,
+                                           isLocked: false)
+        pageStore.addImage(attachment, to: pageID)
+        editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: attachment.id)
+        return attachment.id
+    }
+
+    private func clampedCenter(_ center: CGPoint, for size: CGSize, pageSize: CGSize) -> CGPoint {
+        let halfWidth = size.width / 2
+        let halfHeight = size.height / 2
+        var adjusted = center
+        adjusted.x = max(halfWidth, min(pageSize.width - halfWidth, adjusted.x))
+        adjusted.y = max(halfHeight, min(pageSize.height - halfHeight, adjusted.y))
+        return adjusted
+    }
+
+    private func resizedSize(for imageSize: CGSize,
+                              targetWidth: CGFloat,
+                              pageSize: CGSize) -> CGSize {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return CGSize(width: targetWidth, height: targetWidth)
+        }
+
+        let minDimension: CGFloat = 120
+        let maxWidth = pageSize.width * 0.95
+        let maxHeight = pageSize.height * 0.95
+
+        var width = max(minDimension, min(targetWidth, maxWidth))
+        let aspect = imageSize.height / imageSize.width
+        var height = width * aspect
+
+        if height > maxHeight {
+            height = maxHeight
+            width = height / max(aspect, 0.01)
+        }
+
+        if height < minDimension {
+            height = minDimension
+            width = height / max(aspect, 0.01)
+        }
+
+        return CGSize(width: width, height: height)
     }
 
     /// Called when the overlay detects a background tap so the dragged image becomes fixed and PencilKit resumes drawing.
@@ -879,6 +1310,25 @@ struct NotebookPageView: View {
         }
         return payloads
     }
+
+    private func resetAIChat() {
+        aiMessages = AIChatMessage.seedConversation
+        AIChatPersistence.delete(for: notebookID)
+    }
+
+    private func pageLabel(for pageID: UUID?) -> String? {
+        guard let pageID else { return nil }
+        if let model = pageStore.model(for: pageID) {
+            let trimmed = model.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        if let index = pageStore.pages.firstIndex(where: { $0.id == pageID }) {
+            return "Page \(index + 1)"
+        }
+        return nil
+    }
 }
 
 extension NotebookPageView {
@@ -900,6 +1350,44 @@ private struct EditingAttachmentContext: Identifiable {
     let attachmentID: UUID
 
     var id: UUID { attachmentID }
+}
+
+private struct CroppingAttachmentContext: Identifiable {
+    let pageID: UUID
+    let attachment: CanvasAttachment
+    let pageSize: CGSize
+
+    var id: UUID { attachment.id }
+}
+
+private struct AttachmentDropDelegate: DropDelegate {
+    let pageSize: CGSize
+    let onDrop: (CGPoint, UIImage) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [UTType.image])
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [UTType.image]).first else {
+            return false
+        }
+        let location = info.location
+        provider.loadObject(ofClass: UIImage.self) { object, _ in
+            guard let image = object as? UIImage else { return }
+            DispatchQueue.main.async {
+                onDrop(clampedLocation(location, pageSize: pageSize), image)
+            }
+        }
+        return true
+    }
+
+    private func clampedLocation(_ location: CGPoint, pageSize: CGSize) -> CGPoint {
+        var adjusted = location
+        adjusted.x = max(0, min(pageSize.width, adjusted.x))
+        adjusted.y = max(0, min(pageSize.height, adjusted.y))
+        return adjusted
+    }
 }
 
 private enum AIQueryMode: String, CaseIterable, Identifiable {
@@ -929,8 +1417,8 @@ private enum AIQueryMode: String, CaseIterable, Identifiable {
     }
 }
 
-struct AIChatMessage: Identifiable, Hashable {
-    enum Role {
+struct AIChatMessage: Identifiable, Hashable, Codable {
+    enum Role: String, Codable {
         case user, assistant
     }
 
@@ -958,6 +1446,7 @@ private struct AIChatSheet: View {
     @Binding var messages: [AIChatMessage]
     @Binding var queryMode: AIQueryMode
     var onClose: () -> Void
+    var onNewChat: () -> Void
 
     @State private var draftMessage: String = ""
     @State private var isSending = false
@@ -1013,9 +1502,23 @@ private struct AIChatSheet: View {
 
             Spacer()
 
-            Button(action: {
-                onClose()
-            }) {
+            if messages.count > 1 {
+                Button(action: {
+                    draftMessage = ""
+                    errorMessage = nil
+                    onNewChat()
+                }) {
+                    Text("New Chat")
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.accentColor.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title2)
                     .foregroundColor(.secondary)
@@ -1780,7 +2283,8 @@ struct NotebookPageView_Previews: PreviewProvider {
         NotebookPageView(pageStore: NotebookPageStore(notebookID: UUID(),
                                                       pageModels: [NotebookPageModel(title: "Page 1")]),
                          notebook: .constant(Notebook(title: "Preview",
-                                                       coverColor: Color(red: 0.3, green: 0.5, blue: 0.8))))
+                                                       coverColor: Color(red: 0.3, green: 0.5, blue: 0.8))),
+                         voiceRecorder: VoiceRecorderManager(notebookID: UUID()))
             .previewInterfaceOrientation(.landscapeLeft)
             .previewDevice("iPad (10th generation)")
     }
@@ -1798,7 +2302,7 @@ struct CroppingImagePicker: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.sourceType = sourceType
-        picker.allowsEditing = true // keeps the simple built-in crop UI
+        picker.allowsEditing = false
         picker.delegate = context.coordinator
         picker.modalPresentationStyle = .fullScreen
         return picker
@@ -1834,66 +2338,75 @@ struct CroppingImagePicker: UIViewControllerRepresentable {
     }
 }
 
-private extension NotebookPageView {
-    func loadImage(from provider: NSItemProvider, location: CGPoint, pageID: UUID, viewSize: CGSize) {
-        provider.loadObject(ofClass: UIImage.self) { item, _ in
-            if let image = item as? UIImage {
-                DispatchQueue.main.async {
-                    insertDroppedImage(image, at: location, pageID: pageID, viewSize: viewSize)
-                }
-            } else {
-                provider.loadFileRepresentation(forTypeIdentifier: UTType.image.identifier) { url, _ in
-                    guard let url else { return }
-                    loadImage(fromFileURL: url) { image in
-                        if let image {
-                            insertDroppedImage(image, at: location, pageID: pageID, viewSize: viewSize)
+struct ShapeTemplate: Identifiable {
+    enum Kind: String, CaseIterable, Identifiable {
+        case rectangle
+        case roundedRectangle
+        case square
+        case circle
+        case triangle
+        case line
+        case arrow
+
+        var id: String { rawValue }
+    }
+
+    let id = UUID()
+    let name: String
+    let symbolName: String
+    let kind: Kind
+
+    static let catalog: [ShapeTemplate] = [
+        ShapeTemplate(name: "Rectangle", symbolName: "rectangle", kind: .rectangle),
+        ShapeTemplate(name: "Square", symbolName: "square", kind: .square),
+        ShapeTemplate(name: "Rounded", symbolName: "app", kind: .roundedRectangle),
+        ShapeTemplate(name: "Circle", symbolName: "circle", kind: .circle),
+        ShapeTemplate(name: "Triangle", symbolName: "triangle", kind: .triangle),
+        ShapeTemplate(name: "Line", symbolName: "minus", kind: .line),
+        ShapeTemplate(name: "Arrow", symbolName: "arrow.right", kind: .arrow)
+    ]
+}
+
+struct ShapePickerSheet: View {
+    let onSelect: (ShapeTemplate.Kind) -> Void
+    let onClose: () -> Void
+
+    private let columns: [GridItem] = [
+        GridItem(.adaptive(minimum: 72), spacing: 12)
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(ShapeTemplate.catalog) { template in
+                            Button {
+                                onSelect(template.kind)
+                            } label: {
+                                Image(systemName: template.symbolName)
+                                    .font(.system(size: 26, weight: .semibold))
+                                    .frame(width: 56, height: 56)
+                                    .foregroundStyle(Color.accentColor)
+                                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
+
+                    Text("GIF stickers coming soon.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding()
+            }
+            .navigationTitle("Shapes")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", action: onClose)
                 }
             }
         }
-    }
-
-    func loadImage(fromFileURL url: URL, completion: @escaping (UIImage?) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let data = try? Data(contentsOf: url)
-            let image = data.flatMap { UIImage(data: $0) }
-            DispatchQueue.main.async {
-                completion(image)
-            }
-        }
-    }
-
-    func loadRemoteImage(from url: URL, location: CGPoint, pageID: UUID, viewSize: CGSize) {
-        Task {
-            guard let (data, _) = try? await URLSession.shared.data(from: url),
-                  let image = UIImage(data: data) else { return }
-            await MainActor.run {
-                insertDroppedImage(image, at: location, pageID: pageID, viewSize: viewSize)
-            }
-        }
-    }
-
-    func insertDroppedImage(_ image: UIImage, at location: CGPoint, pageID: UUID, viewSize: CGSize) {
-        let scaleWidth = viewSize.width / basePageSize.width
-        let scaleHeight = viewSize.height / basePageSize.height
-        let scale = min(scaleWidth, scaleHeight)
-        let offsetX = (viewSize.width - basePageSize.width * scale) / 2
-        let offsetY = (viewSize.height - basePageSize.height * scale) / 2
-        let normalizedX = (location.x - offsetX) / scale
-        let normalizedY = (location.y - offsetY) / scale
-        let clampedCenter = CGPoint(x: max(0, min(basePageSize.width, normalizedX)),
-                                    y: max(0, min(basePageSize.height, normalizedY)))
-        let size = defaultImageSize(for: image)
-        guard let data = image.pngData() ?? image.jpegData(compressionQuality: 0.95) else { return }
-        let attachment = NotebookPageImage(imageData: data,
-                                           center: clampedCenter,
-                                           size: size,
-                                           rotation: 0)
-        pageStore.addImage(attachment, to: pageID)
-    }
-
-    func feedbackForUnsupportedDrop() {
-        UINotificationFeedbackGenerator().notificationOccurred(.error)
     }
 }

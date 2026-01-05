@@ -55,17 +55,44 @@ struct NotebookPageImage: Identifiable, Hashable, Codable {
     var center: CGPoint
     var size: CGSize
     var rotation: Double
+    var isLocked: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id, imageData, center, size, rotation, isLocked
+    }
 
     init(id: UUID = UUID(),
          imageData: Data,
          center: CGPoint,
          size: CGSize,
-         rotation: Double = 0) {
+         rotation: Double = 0,
+         isLocked: Bool = false) {
         self.id = id
         self.imageData = imageData
         self.center = center
         self.size = size
         self.rotation = rotation
+        self.isLocked = isLocked
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        imageData = try container.decode(Data.self, forKey: .imageData)
+        center = try container.decode(CGPoint.self, forKey: .center)
+        size = try container.decode(CGSize.self, forKey: .size)
+        rotation = try container.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
+        isLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(imageData, forKey: .imageData)
+        try container.encode(center, forKey: .center)
+        try container.encode(size, forKey: .size)
+        try container.encode(rotation, forKey: .rotation)
+        try container.encode(isLocked, forKey: .isLocked)
     }
 }
 
@@ -87,6 +114,7 @@ struct Notebook: Identifiable, Hashable, Codable {
     var isFavorite: Bool
     var pages: [NotebookPageModel]
     var currentPageIndex: Int
+    var isTrashed: Bool
 
     init(id: UUID = UUID(),
          title: String,
@@ -95,13 +123,15 @@ struct Notebook: Identifiable, Hashable, Codable {
          lastOpened: Date = Date(),
          isFavorite: Bool = false,
          pages: [NotebookPageModel] = [NotebookPageModel(title: "Page 1")],
-         currentPageIndex: Int = 0) {
+         currentPageIndex: Int = 0,
+         isTrashed: Bool = false) {
         self.id = id
         self.title = title
         self.coverColor = coverColor
         self.paperStyle = paperStyle
         self.lastOpened = lastOpened
         self.isFavorite = isFavorite
+        self.isTrashed = isTrashed
 
         let normalizedPages: [NotebookPageModel]
         if pages.isEmpty {
@@ -122,14 +152,12 @@ struct Notebook: Identifiable, Hashable, Codable {
     }
 
     static var sampleData: [Notebook] {
-        [
-            Notebook(title: "Product Design", coverColor: Color(red: 0.16, green: 0.3, blue: 0.58)),
-            Notebook(title: "Meeting Notes", coverColor: Color(red: 0.85, green: 0.52, blue: 0.26), paperStyle: .lined),
-            Notebook(title: "Sketchbook", coverColor: Color(red: 0.28, green: 0.68, blue: 0.38), paperStyle: .blank)
-        ]
+        [Notebook(title: "My Notebook",
+                  coverColor: Color(red: 0.16, green: 0.3, blue: 0.58),
+                  paperStyle: .grid)]
     }
     private enum CodingKeys: String, CodingKey {
-        case id, title, coverColor, paperStyle, lastOpened, isFavorite, pages, currentPageIndex
+        case id, title, coverColor, paperStyle, lastOpened, isFavorite, pages, currentPageIndex, isTrashed
     }
 
     init(from decoder: Decoder) throws {
@@ -145,6 +173,7 @@ struct Notebook: Identifiable, Hashable, Codable {
         pages = Notebook.normalizePages(decodedPages, paperStyle: paperStyle)
         currentPageIndex = min(try container.decodeIfPresent(Int.self, forKey: .currentPageIndex) ?? 0,
                                max(pages.count - 1, 0))
+        isTrashed = try container.decodeIfPresent(Bool.self, forKey: .isTrashed) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -157,6 +186,7 @@ struct Notebook: Identifiable, Hashable, Codable {
         try container.encode(isFavorite, forKey: .isFavorite)
         try container.encode(pages, forKey: .pages)
         try container.encode(currentPageIndex, forKey: .currentPageIndex)
+        try container.encode(isTrashed, forKey: .isTrashed)
     }
 }
 

@@ -7,10 +7,9 @@ enum OpenRouterChatService {
     // MARK: Configuration
     struct Configuration {
         // ⚠️ Move this to Keychain or environment later
-        static let apiKey: String = "suck-my-fat-one-DEREK!!!"
+        static let apiKey: String = ""
     }
 
-    
     // MARK: Request Models
     struct ChatRequestMessage: Codable {
         let role: String

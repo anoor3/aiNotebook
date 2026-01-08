@@ -120,6 +120,10 @@ final class VoiceRecorderManager: NSObject, ObservableObject {
         recordingsDirectory().appendingPathComponent("recordings.json")
     }
 
+    func recordingURL(for recording: VoiceRecording) -> URL {
+        recordingsDirectory().appendingPathComponent(recording.fileName)
+    }
+
     private func loadRecordings() -> [VoiceRecording] {
         let url = recordingsMetadataURL()
         guard let data = try? Data(contentsOf: url) else { return [] }

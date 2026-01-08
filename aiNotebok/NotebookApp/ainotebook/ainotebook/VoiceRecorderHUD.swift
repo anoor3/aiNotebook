@@ -3,6 +3,7 @@ import SwiftUI
 struct VoiceRecorderHUD: View {
     @ObservedObject var recorder: VoiceRecorderManager
     var onClose: () -> Void
+    var onShowRecordings: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -25,6 +26,12 @@ struct VoiceRecorderHUD: View {
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+
+            Button(action: onShowRecordings) {
+                Image(systemName: "music.note.list")
                     .font(.footnote)
                     .foregroundColor(.secondary)
             }

@@ -27,6 +27,7 @@
 		C4F70A012EF0B65A00AA5CAA /* VoiceRecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A002EF0B65A00AA5CAA /* VoiceRecordingManager.swift */; };
 		C4F70A032EF0B65A00AA5CAA /* VoiceRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A022EF0B65A00AA5CAA /* VoiceRecording.swift */; };
 		C4F70A052EF0B65A00AA5CAA /* VoiceRecorderHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A042EF0B65A00AA5CAA /* VoiceRecorderHUD.swift */; };
+		C4F70A0B2EF0B65A00AA5CAA /* VoiceRecordingListSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A0A2EF0B65A00AA5CAA /* VoiceRecordingListSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,6 +71,7 @@
 		C4F70A002EF0B65A00AA5CAA /* VoiceRecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecordingManager.swift; sourceTree = "<group>"; };
 		C4F70A022EF0B65A00AA5CAA /* VoiceRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecording.swift; sourceTree = "<group>"; };
 		C4F70A042EF0B65A00AA5CAA /* VoiceRecorderHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorderHUD.swift; sourceTree = "<group>"; };
+		C4F70A0A2EF0B65A00AA5CAA /* VoiceRecordingListSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecordingListSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -137,6 +139,7 @@
 				C4F70A002EF0B65A00AA5CAA /* VoiceRecordingManager.swift */,
 				C4F70A022EF0B65A00AA5CAA /* VoiceRecording.swift */,
 				C4F70A042EF0B65A00AA5CAA /* VoiceRecorderHUD.swift */,
+				C4F70A0A2EF0B65A00AA5CAA /* VoiceRecordingListSheet.swift */,
 				C4F7080E2EF0B65A00AA5C45 /* Assets.xcassets */,
 			);
 			sourceTree = "<group>";
@@ -294,6 +297,7 @@
 				C4F70A012EF0B65A00AA5CAA /* VoiceRecordingManager.swift in Sources */,
 				C4F70A032EF0B65A00AA5CAA /* VoiceRecording.swift in Sources */,
 				C4F70A052EF0B65A00AA5CAA /* VoiceRecorderHUD.swift in Sources */,
+				C4F70A0B2EF0B65A00AA5CAA /* VoiceRecordingListSheet.swift in Sources */,
 				C4F70A072EF0B65A00AA5CAA /* InkTileCache.swift in Sources */,
 				C4F708222EF0B65A00AA5C45 /* NotebookView.swift in Sources */,
 			);

@@ -4,6 +4,7 @@ import AVFoundation
 final class VoiceRecorderManager: NSObject, ObservableObject {
     @Published private(set) var isRecording: Bool = false
     @Published private(set) var recordings: [VoiceRecording] = []
+    @Published var errorMessage: String?
 
     private let notebookID: UUID
     private var audioRecorder: AVAudioRecorder?
@@ -41,9 +42,13 @@ final class VoiceRecorderManager: NSObject, ObservableObject {
 
     private func startRecording() {
         guard audioRecorder == nil else { return }
+        errorMessage = nil
         requestPermission { [weak self] granted in
             guard let self else { return }
-            guard granted else { return }
+            guard granted else {
+                self.errorMessage = "Microphone access is disabled. Enable it in Settings to record voice notes."
+                return
+            }
             self.beginRecording()
         }
     }
@@ -72,8 +77,10 @@ final class VoiceRecorderManager: NSObject, ObservableObject {
             audioRecorder = try AVAudioRecorder(url: url, settings: settings)
             audioRecorder?.record()
             isRecording = true
+            errorMessage = nil
         } catch {
             print("VoiceRecorderManager start error: \(error)")
+            errorMessage = "Unable to start recording. Please try again."
             audioRecorder = nil
             currentFileURL = nil
             deactivateAudioSession()

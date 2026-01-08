@@ -40,5 +40,16 @@ struct VoiceRecorderHUD: View {
         .padding(.vertical, 10)
         .background(.thinMaterial, in: Capsule())
         .shadow(color: Color.black.opacity(0.15), radius: 6, y: 4)
+        .alert("Recording Unavailable", isPresented: Binding(get: {
+            recorder.errorMessage != nil
+        }, set: { _ in
+            recorder.errorMessage = nil
+        })) {
+            Button("OK", role: .cancel) {
+                recorder.errorMessage = nil
+            }
+        } message: {
+            Text(recorder.errorMessage ?? "Unable to start recording.")
+        }
     }
 }

@@ -79,6 +79,7 @@ struct NotebookPageView: View {
     @State private var shareURLs: [URL] = []
     @State private var isPresentingShareSheet = false
     @State private var showVoiceRecorderHUD = false
+    @State private var showVoiceRecordingsSheet = false
     @StateObject private var voiceRecorder: VoiceRecorderManager
 
     init(paperStyle: PaperStyle = .grid, pageStore: NotebookPageStore, notebook: Binding<Notebook>) {
@@ -281,6 +282,13 @@ struct NotebookPageView: View {
                                     })
             .presentationDetents([.medium])
         }
+        .sheet(isPresented: $showVoiceRecordingsSheet) {
+            VoiceRecordingListSheet(recorder: voiceRecorder) {
+                showVoiceRecordingsSheet = false
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .sheet(item: $imagePickerSource) { source in
             CroppingImagePicker(sourceType: source.uiKitSource) { image in
                 handleImageSelection(image)
@@ -315,7 +323,8 @@ struct NotebookPageView: View {
         .overlay(alignment: .topTrailing) {
             if showVoiceRecorderHUD || voiceRecorder.isRecording {
                 VoiceRecorderHUD(recorder: voiceRecorder,
-                                 onClose: { showVoiceRecorderHUD = false })
+                                 onClose: { showVoiceRecorderHUD = false },
+                                 onShowRecordings: { showVoiceRecordingsSheet = true })
                     .padding(.trailing, 24)
                     .padding(.top, 80)
             }

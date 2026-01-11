@@ -1499,30 +1499,28 @@ private struct MarkerNibShape: Shape {
 /// Shiny "AI" badge used on the toolbar.
 private struct AISparkleGlyph: View {
     var body: some View {
-        Text("AI")
-            .font(.system(size: 12, weight: .bold, design: .rounded))
-            .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.black.opacity(0.95))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(Color.white.opacity(0.35), lineWidth: 1)
-                    .shadow(color: Color.accentColor.opacity(0.6), radius: 4)
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(LinearGradient(colors: [Color.accentColor.opacity(0.7), .clear, Color.accentColor.opacity(0.7)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing),
-                            lineWidth: 3)
-                    .blur(radius: 1.2)
-                    .opacity(0.6)
-            )
-            .shadow(color: Color.accentColor.opacity(0.45), radius: 6, x: 0, y: 2)
+        HStack(spacing: 6) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 11, weight: .semibold))
+            Text("AI")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule(style: .continuous)
+                .fill(
+                    LinearGradient(colors: [Color.accentColor, Color.purple.opacity(0.9)],
+                                   startPoint: .topLeading,
+                                   endPoint: .bottomTrailing)
+                )
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(Color.white.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: Color.purple.opacity(0.35), radius: 6, x: 0, y: 2)
     }
 }
 

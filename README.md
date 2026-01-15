@@ -14,6 +14,7 @@ A SwiftUI iPad notebook with a custom Pencil-like drawing engine that feels like
 - **Data model:** `Notebook` and `NotebookPageModel` track notebook metadata, pages, and drawing payloads.
 - **Persistence:** `DrawingPersistence` stores per-page drawings; `NotebookLibraryPersistence` saves the library’s notebooks as JSON in the app’s Documents directory.
 
+
 ## Getting started
 1. Open `NotebookApp/ainotebook/ainotebook.xcodeproj` in Xcode on macOS with an iPad simulator or device.
 2. Build and run the **ainotebook** target.

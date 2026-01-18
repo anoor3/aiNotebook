@@ -23,3 +23,5 @@ A SwiftUI iPad notebook with a custom Pencil-like drawing engine that feels like
 ## Notes
 - The app targets iPadOS and is optimized for Apple Pencil but does not rely on PencilKit.
 - Autosave runs on a background queue; drawings persist per page, and library metadata persists across launches.
+
+

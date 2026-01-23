@@ -1,4 +1,5 @@
 import SwiftUI
+
 struct ContentView: View {
     @StateObject private var pageStore = NotebookPageStore(notebookID: UUID(),
                                                            pageModels: [NotebookPageModel(title: "Page 1")])

@@ -1,8 +1,9 @@
 import UIKit
 
 enum EraserOverlayEvent {
-    case began
-    case moved
+    
+    case began 
+    case moved 
     case ended
 }
 

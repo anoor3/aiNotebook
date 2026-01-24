@@ -142,6 +142,7 @@ final class DrawingCanvasView: UIView {
             return
         }
 
+        
         let style = InkStyle(color: CodableColor(strokeColor),
                              isEraser: isEraser,
                              baseWidth: strokeWidth)

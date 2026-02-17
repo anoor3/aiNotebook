@@ -67,6 +67,11 @@ struct PencilCanvasView: UIViewRepresentable {
             // ensure initial render is crisp
             hostView.updateInk(with: controller.canvasView.drawing)
             handleToolChange(newTool: controller.tool)
+            if let sharedZoomScale {
+                hostView.resetZoom(animated: false)
+                hostView.applyZoomScale(sharedZoomScale.wrappedValue, animated: false)
+                controller.zoomScale = sharedZoomScale.wrappedValue
+            }
 
             if !observingGesture {
                 controller.canvasView.drawingGestureRecognizer.addTarget(
@@ -256,6 +261,14 @@ final class ZoomableCanvasHostView: UIView {
         scrollView.setZoomScale(1.0, animated: animated)
         prepareForZoomInteraction()
         updateZoomScale(1.0)
+    }
+
+    func applyZoomScale(_ scale: CGFloat, animated: Bool) {
+        let clamped = min(max(scale, scrollView.minimumZoomScale), scrollView.maximumZoomScale)
+        scrollView.setZoomScale(clamped, animated: animated)
+        updateZoomScale(clamped)
+        setNeedsGridRedraw()
+        updateVisibleInkTiles()
     }
 
     func prepareForZoomInteraction() {

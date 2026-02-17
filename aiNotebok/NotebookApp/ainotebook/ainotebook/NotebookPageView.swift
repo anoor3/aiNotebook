@@ -1334,6 +1334,7 @@ struct NotebookPageView: View {
                                                     title: page.title,
                                                     pageNumber: index + 1,
                                                     paperStyle: page.paperStyle,
+                                                    paperColor: notebook.paperColor,
                                                     drawingData: drawingData,
                                                     attachments: attachments)
             payloads.append(payload)

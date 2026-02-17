@@ -8,6 +8,7 @@ struct NotebookExportPagePayload {
     let title: String
     let pageNumber: Int
     let paperStyle: PaperStyle
+    let paperColor: PaperColor
     let drawingData: Data
     let attachments: [NotebookPageImage]
 }
@@ -140,26 +141,37 @@ enum NotebookExportService {
                                 in context: CGContext,
                                 pageSize: CGSize) {
         let rect = CGRect(origin: .zero, size: pageSize)
+        drawBackground(for: page.paperColor, in: context, rect: rect)
+        drawPaperStyle(page.paperStyle, color: page.paperColor, in: context, rect: rect)
         let image = snapshotDrawing(drawingData: page.drawingData,
                                     pageSize: pageSize,
                                     attachments: page.attachments,
-                                    paperStyle: page.paperStyle)
+                                    paperStyle: page.paperStyle,
+                                    paperColor: page.paperColor)
         context.saveGState()
         context.interpolationQuality = .high
         image.draw(in: rect)
         context.restoreGState()
     }
 
-    private static func drawBackground(in context: CGContext, rect: CGRect) {
-        let pageColor = UIColor(red: 233/255, green: 228/255, blue: 216/255, alpha: 1.0)
-        context.setFillColor(pageColor.cgColor)
+    private static func drawBackground(for color: PaperColor,
+                                       in context: CGContext,
+                                       rect: CGRect) {
+        context.setFillColor(color.uiColor.cgColor)
         context.fill(rect)
     }
 
     private static func drawPaperStyle(_ style: PaperStyle,
+                                       color: PaperColor,
                                        in context: CGContext,
                                        rect: CGRect) {
-        let gridColor = UIColor(red: 178/255, green: 172/255, blue: 156/255, alpha: 0.85)
+        let gridColor: UIColor
+        switch color {
+        case .classic:
+            gridColor = UIColor(red: 178/255, green: 172/255, blue: 156/255, alpha: 0.85)
+        case .white:
+            gridColor = UIColor(red: 190/255, green: 190/255, blue: 180/255, alpha: 0.75)
+        }
         context.saveGState()
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
@@ -234,7 +246,8 @@ enum NotebookExportService {
     private static func snapshotDrawing(drawingData: Data,
                                          pageSize: CGSize,
                                          attachments: [NotebookPageImage],
-                                         paperStyle: PaperStyle) -> UIImage {
+                                         paperStyle: PaperStyle,
+                                         paperColor: PaperColor) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 3.0
         format.opaque = true
@@ -242,8 +255,8 @@ enum NotebookExportService {
         let renderer = UIGraphicsImageRenderer(size: pageSize, format: format)
         return renderer.image { ctx in
             let rect = CGRect(origin: .zero, size: pageSize)
-            drawBackground(in: ctx.cgContext, rect: rect)
-            drawPaperStyle(paperStyle, in: ctx.cgContext, rect: rect)
+            drawBackground(for: paperColor, in: ctx.cgContext, rect: rect)
+            drawPaperStyle(paperStyle, color: paperColor, in: ctx.cgContext, rect: rect)
             ctx.cgContext.saveGState()
             drawAttachments(attachments, in: ctx.cgContext)
             ctx.cgContext.restoreGState()

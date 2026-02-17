@@ -1,38 +1,33 @@
 import SwiftUI
+import PencilKit
 import UIKit
 
-final class CanvasController: ObservableObject {
-    enum EraserMode: String, CaseIterable {
-        case precision
-        case stroke
+enum CanvasDrawingTool: Equatable {
+    case pen
+    case highlighter
+    case eraser
+    case selection
 
-        var width: CGFloat {
-            switch self {
-            case .precision:
-                return 6.0
-            case .stroke:
-                return 14.0
-            }
+    var isDrawingTool: Bool {
+        switch self {
+        case .eraser, .selection:
+            return false
+        default:
+            return true
         }
     }
-    let id: UUID
-    let canvasView: DrawingCanvasView
-    var onDrawingChanged: ((InkDrawing) -> Void)?
-    var onImageAttachmentsChanged: (([PageImageAttachment]) -> Void)?
-    var onVoiceNotesChanged: (([VoiceNote]) -> Void)?
+}
 
-    private static let allowedStrokeWidths: [CGFloat] = [1.8, 3.0, 4.4]
-    private var undoManager = InkUndoManager()
-    private var penStrokeWidth: CGFloat
+final class CanvasController: ObservableObject {
+    let id: UUID
+    let canvasView: PKCanvasView
+    var onDrawingChanged: ((PKDrawing) -> Void)?
+
+    private static let allowedStrokeWidths: [CGFloat] = [0.7, 3.0, 6.0]
 
     @Published var strokeColor: UIColor {
         didSet {
-            let normalized: UIColor
-            if useHighlighter {
-                normalized = strokeColor.withAlphaComponent(0.35)
-            } else {
-                normalized = CanvasController.opaqueColor(from: strokeColor)
-            }
+            let normalized = CanvasController.opaqueColor(from: strokeColor)
             if !strokeColor.isEqual(normalized) {
                 strokeColor = normalized
                 return
@@ -48,132 +43,104 @@ final class CanvasController: ObservableObject {
                 strokeWidth = adjusted
                 return
             }
-            penStrokeWidth = adjusted
             applyCurrentTool()
         }
     }
 
-    @Published var useEraser: Bool {
-        didSet {
-            if useEraser {
-                useHighlighter = false
-            }
-            applyCurrentTool()
-        }
-    }
-
-    @Published var useHighlighter: Bool {
-        didSet {
-            if useHighlighter {
-                useEraser = false
-            }
-            applyCurrentTool()
-        }
+    @Published var tool: CanvasDrawingTool {
+        didSet { applyCurrentTool() }
     }
 
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
-    @Published var imageAttachments: [PageImageAttachment] = [] {
-        didSet {
-            canvasView.setAttachments(imageAttachments)
-            onImageAttachmentsChanged?(imageAttachments)
-        }
-    }
-
-    @Published var voiceNotes: [VoiceNote] = [] {
-        didSet { onVoiceNotesChanged?(voiceNotes) }
-    }
-    @Published var eraserMode: EraserMode = .stroke {
-        didSet { applyCurrentTool() }
-    }
 
     init(id: UUID = UUID(),
          strokeColor: UIColor = UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0),
          strokeWidth: CGFloat = 3.2,
-         useEraser: Bool = false,
-         useHighlighter: Bool = false) {
+         tool: CanvasDrawingTool = .pen) {
         self.id = id
-        let view = DrawingCanvasView()
+        let view = PKCanvasView()
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        view.drawingPolicy = .pencilOnly
+        view.isRulerActive = false
+        view.isScrollEnabled = false
+        view.alwaysBounceVertical = false
+        view.alwaysBounceHorizontal = false
+        view.maximumZoomScale = 1.0
+        view.minimumZoomScale = 1.0
+        view.bouncesZoom = false
+        view.showsHorizontalScrollIndicator = false
+        view.showsVerticalScrollIndicator = false
+        view.allowsFingerDrawing = false
+        view.contentScaleFactor = UIScreen.main.scale
+        view.layer.contentsScale = UIScreen.main.scale
         canvasView = view
         self.strokeColor = CanvasController.opaqueColor(from: strokeColor)
-        let normalizedWidth = CanvasController.nearestStrokeWidth(to: strokeWidth)
-        self.strokeWidth = normalizedWidth
-        self.penStrokeWidth = normalizedWidth
-        self.useEraser = useEraser
-        self.useHighlighter = useHighlighter
-        configureCallbacks()
+        self.strokeWidth = CanvasController.nearestStrokeWidth(to: strokeWidth)
+        self.tool = tool
         applyCurrentTool()
-        setDrawing(.empty)
-        canvasView.setAttachments(imageAttachments)
         updateUndoState()
     }
 
-    func currentDrawingValue() -> InkDrawing {
-        undoManager.drawing
+    func currentDrawing() -> PKDrawing {
+        canvasView.drawing
     }
 
-    func setDrawing(_ drawing: InkDrawing) {
-        undoManager = InkUndoManager(drawing: drawing)
-        canvasView.setDrawing(drawing)
+    func setDrawing(_ drawing: PKDrawing) {
+        canvasView.drawing = drawing
         updateUndoState()
-    }
-
-    func setImageAttachments(_ attachments: [PageImageAttachment]) {
-        imageAttachments = attachments
-        canvasView.setAttachments(attachments)
-    }
-
-    func setVoiceNotes(_ notes: [VoiceNote]) {
-        voiceNotes = notes
-    }
-
-    func setEraserMode(_ mode: EraserMode) {
-        eraserMode = mode
     }
 
     func publishDrawingChange() {
-        onDrawingChanged?(undoManager.drawing)
+        let drawing = canvasView.drawing
+        onDrawingChanged?(drawing)
     }
 
     func applyCurrentTool() {
-        let color: UIColor
-        if useHighlighter {
-            color = strokeColor.withAlphaComponent(0.35)
-        } else {
-            color = CanvasController.opaqueColor(from: strokeColor)
+        switch tool {
+        case .eraser:
+            canvasView.tool = PKEraserTool(.vector)
+        case .selection:
+            canvasView.tool = PKLassoTool()
+        case .pen:
+            let color = CanvasController.enhancedColor(from: CanvasController.opaqueColor(from: strokeColor))
+            canvasView.tool = PKInkingTool(.pen, color: color, width: strokeWidth)
+        case .highlighter:
+            let color = CanvasController.highlighterColor(from: strokeColor)
+            let width = CanvasController.highlighterWidth(for: strokeWidth)
+            canvasView.tool = PKInkingTool(.marker, color: color, width: width)
         }
-        let width: CGFloat
-        if useEraser {
-            width = eraserMode.width
-        } else if useHighlighter {
-            width = max(penStrokeWidth, 5.5)
-        } else {
-            width = penStrokeWidth
-        }
-        canvasView.setTool(color: color, width: width, isEraser: useEraser)
     }
 
     func undo() {
-        guard let updatedDrawing = undoManager.undo() else { return }
-        canvasView.setDrawing(updatedDrawing)
-        publishDrawingChange()
+        canvasView.undoManager?.undo()
         updateUndoState()
     }
 
     func redo() {
-        guard let updatedDrawing = undoManager.redo() else { return }
-        canvasView.setDrawing(updatedDrawing)
-        publishDrawingChange()
+        canvasView.undoManager?.redo()
         updateUndoState()
     }
 
     func updateUndoState() {
-        canUndo = undoManager.canUndo
-        canRedo = undoManager.canRedo
+        canUndo = canvasView.undoManager?.canUndo ?? false
+        canRedo = canvasView.undoManager?.canRedo ?? false
     }
 
     func resetZoom(animated: Bool = true) {
-        // Zoom is managed by ZoomableCanvasHostView.
+        canvasView.setZoomScale(1.0, animated: animated)
+        canvasView.panGestureRecognizer.minimumNumberOfTouches = 2
+    }
+
+    func disableScribbleInteraction() {
+        if #available(iOS 14.0, *) {
+            for interaction in canvasView.interactions {
+                if let scribble = interaction as? UIScribbleInteraction {
+                    canvasView.removeInteraction(scribble)
+                }
+            }
+        }
     }
 
     private static func nearestStrokeWidth(to width: CGFloat) -> CGFloat {
@@ -194,20 +161,44 @@ final class CanvasController: ObservableObject {
         return color.withAlphaComponent(1.0)
     }
 
-    private func configureCallbacks() {
-        canvasView.onStrokeCommitted = { [weak self] stroke in
-            self?.handleStrokeCommitted(stroke)
+    private static func enhancedColor(from color: UIColor) -> UIColor {
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 1
+        if color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) {
+            let boostedSaturation = min(1.0, saturation * 1.15 + 0.05)
+            let boostedBrightness = min(1.0, brightness * 1.1 + 0.04)
+            return UIColor(hue: hue, saturation: boostedSaturation, brightness: boostedBrightness, alpha: alpha)
         }
-        canvasView.onAttachmentsChanged = { [weak self] updated in
-            self?.imageAttachments = updated
-        }
+        return color
     }
 
-    private func handleStrokeCommitted(_ stroke: InkStroke) {
-        undoManager.apply(.addStroke(stroke))
-        let updated = undoManager.drawing
-        canvasView.setDrawing(updated)
-        publishDrawingChange()
-        updateUndoState()
+    private static func highlighterColor(from color: UIColor) -> UIColor {
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 1
+        guard color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
+            return color.withAlphaComponent(0.72)
+        }
+        let pastelSaturation = min(0.65, max(0.25, saturation * 0.55 + 0.2))
+        let boostedBrightness = min(1.0, brightness * 0.95 + 0.15)
+        return UIColor(hue: hue,
+                       saturation: pastelSaturation,
+                       brightness: boostedBrightness,
+                       alpha: 0.72)
+    }
+
+    private static func highlighterWidth(for baseWidth: CGFloat) -> CGFloat {
+        let adjusted = nearestStrokeWidth(to: baseWidth)
+        switch adjusted {
+        case ..<1.0:
+            return 12
+        case ..<5.0:
+            return 24
+        default:
+            return 32
+        }
     }
 }

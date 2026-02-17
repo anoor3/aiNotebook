@@ -6,6 +6,31 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C4F708202EF0B65A00AA5C45 /* ainotebookApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708012EF0B65A00AA5C45 /* ainotebookApp.swift */; };
+		C4F708212EF0B65A00AA5C45 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708022EF0B65A00AA5C45 /* ContentView.swift */; };
+		C4F708222EF0B65A00AA5C45 /* NotebookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708032EF0B65A00AA5C45 /* NotebookView.swift */; };
+		C4F708232EF0B65A00AA5C45 /* CanvasController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708042EF0B65A00AA5C45 /* CanvasController.swift */; };
+		C4F708242EF0B65A00AA5C45 /* PencilCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708052EF0B65A00AA5C45 /* PencilCanvasView.swift */; };
+		C4F708252EF0B65A00AA5C45 /* CustomInkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708062EF0B65A00AA5C45 /* CustomInkView.swift */; };
+		C4F708262EF0B65A00AA5C45 /* DrawingPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708072EF0B65A00AA5C45 /* DrawingPersistence.swift */; };
+		C4F708272EF0B65A00AA5C45 /* NotebookModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708082EF0B65A00AA5C45 /* NotebookModels.swift */; };
+		C4F708282EF0B65A00AA5C45 /* NotebookLibraryPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708092EF0B65A00AA5C45 /* NotebookLibraryPersistence.swift */; };
+		C4F708292EF0B65A00AA5C45 /* LibraryRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F7080A2EF0B65A00AA5C45 /* LibraryRootView.swift */; };
+		C4F7082A2EF0B65A00AA5C45 /* NotebookPageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F7080B2EF0B65A00AA5C45 /* NotebookPageStore.swift */; };
+		C4F7082B2EF0B65A00AA5C45 /* NotebookPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F7080C2EF0B65A00AA5C45 /* NotebookPageView.swift */; };
+		C4F7082C2EF0B65A00AA5C45 /* NotebookContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F7080D2EF0B65A00AA5C45 /* NotebookContainerView.swift */; };
+		C4F7082D2EF0B65A00AA5C45 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C4F7080E2EF0B65A00AA5C45 /* Assets.xcassets */; };
+		C4F7082E2EF0B65A00AA5C45 /* NotebookDecorations.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F7080F2EF0B65A00AA5C45 /* NotebookDecorations.swift */; };
+		C4F708302EF0B65A00AA5C45 /* SessionStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F708102EF0B65A00AA5C45 /* SessionStatePersistence.swift */; };
+		C4F70A012EF0B65A00AA5CAA /* VoiceRecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A002EF0B65A00AA5CAA /* VoiceRecordingManager.swift */; };
+		C4F70A032EF0B65A00AA5CAA /* VoiceRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A022EF0B65A00AA5CAA /* VoiceRecording.swift */; };
+		C4F70A052EF0B65A00AA5CAA /* VoiceRecorderHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A042EF0B65A00AA5CAA /* VoiceRecorderHUD.swift */; };
+		C4F70B142EF0B65A00AA5CCF /* VoiceRecordingHistorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70B132EF0B65A00AA5CCF /* VoiceRecordingHistorySheet.swift */; };
+		C4F70B152EF0B65A00AA5CD0 /* AIChatPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70B152EF0B65A00AA5CD0 /* AIChatPersistence.swift */; };
+		C4F70A072EF0B65A00AA5CAA /* InkTileCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F70A062EF0B65A00AA5CAA /* InkTileCache.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		C4F707782EF0B65900AA5C45 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,25 +52,30 @@
 		C4F7076A2EF0B65700AA5C45 /* ainotebook.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ainotebook.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C4F707772EF0B65900AA5C45 /* ainotebookTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ainotebookTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C4F707812EF0B65900AA5C45 /* ainotebookUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ainotebookUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C4F708012EF0B65A00AA5C45 /* ainotebookApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ainotebookApp.swift; sourceTree = "<group>"; };
+		C4F708022EF0B65A00AA5C45 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		C4F708032EF0B65A00AA5C45 /* NotebookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookView.swift; sourceTree = "<group>"; };
+		C4F708042EF0B65A00AA5C45 /* CanvasController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasController.swift; sourceTree = "<group>"; };
+		C4F708052EF0B65A00AA5C45 /* PencilCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PencilCanvasView.swift; sourceTree = "<group>"; };
+		C4F708062EF0B65A00AA5C45 /* CustomInkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomInkView.swift; sourceTree = "<group>"; };
+		C4F708072EF0B65A00AA5C45 /* DrawingPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingPersistence.swift; sourceTree = "<group>"; };
+		C4F708082EF0B65A00AA5C45 /* NotebookModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookModels.swift; sourceTree = "<group>"; };
+		C4F708092EF0B65A00AA5C45 /* NotebookLibraryPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookLibraryPersistence.swift; sourceTree = "<group>"; };
+		C4F7080A2EF0B65A00AA5C45 /* LibraryRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryRootView.swift; sourceTree = "<group>"; };
+		C4F7080B2EF0B65A00AA5C45 /* NotebookPageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookPageStore.swift; sourceTree = "<group>"; };
+		C4F7080C2EF0B65A00AA5C45 /* NotebookPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookPageView.swift; sourceTree = "<group>"; };
+		C4F7080D2EF0B65A00AA5C45 /* NotebookContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookContainerView.swift; sourceTree = "<group>"; };
+		C4F7080E2EF0B65A00AA5C45 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C4F7080F2EF0B65A00AA5C45 /* NotebookDecorations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookDecorations.swift; sourceTree = "<group>"; };
+		C4F708102EF0B65A00AA5C45 /* SessionStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStatePersistence.swift; sourceTree = "<group>"; };
+		C4F70A002EF0B65A00AA5CAA /* VoiceRecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecordingManager.swift; sourceTree = "<group>"; };
+		C4F70A022EF0B65A00AA5CAA /* VoiceRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecording.swift; sourceTree = "<group>"; };
+		C4F70A042EF0B65A00AA5CAA /* VoiceRecorderHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorderHUD.swift; sourceTree = "<group>"; };
+		C4F70B152EF0B65A00AA5CD0 /* AIChatPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatPersistence.swift; sourceTree = "<group>"; };
+		C4F70B132EF0B65A00AA5CCF /* VoiceRecordingHistorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecordingHistorySheet.swift; sourceTree = "<group>"; };
+		C4F70A062EF0B65A00AA5CAA /* InkTileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkTileCache.swift; sourceTree = "<group>"; };
+		C4F70B102EF0B65A00AA5CCC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
-
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		C4F7076C2EF0B65700AA5C45 /* ainotebook */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ainotebook;
-			sourceTree = "<group>";
-		};
-		C4F7077A2EF0B65900AA5C45 /* ainotebookTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ainotebookTests;
-			sourceTree = "<group>";
-		};
-		C4F707842EF0B65900AA5C45 /* ainotebookUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ainotebookUITests;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		C4F707672EF0B65700AA5C45 /* Frameworks */ = {
@@ -75,9 +105,7 @@
 		C4F707612EF0B65700AA5C45 = {
 			isa = PBXGroup;
 			children = (
-				C4F7076C2EF0B65700AA5C45 /* ainotebook */,
-				C4F7077A2EF0B65900AA5C45 /* ainotebookTests */,
-				C4F707842EF0B65900AA5C45 /* ainotebookUITests */,
+				C4F708002EF0B65A00AA5C45,
 				C4F7076B2EF0B65700AA5C45 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +118,35 @@
 				C4F707812EF0B65900AA5C45 /* ainotebookUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C4F708002EF0B65A00AA5C45 = {
+			isa = PBXGroup;
+			children = (
+				C4F708012EF0B65A00AA5C45 /* ainotebookApp.swift */,
+				C4F708022EF0B65A00AA5C45 /* ContentView.swift */,
+				C4F708032EF0B65A00AA5C45 /* NotebookView.swift */,
+				C4F708042EF0B65A00AA5C45 /* CanvasController.swift */,
+				C4F708052EF0B65A00AA5C45 /* PencilCanvasView.swift */,
+				C4F708062EF0B65A00AA5C45 /* CustomInkView.swift */,
+				C4F708072EF0B65A00AA5C45 /* DrawingPersistence.swift */,
+				C4F708082EF0B65A00AA5C45 /* NotebookModels.swift */,
+				C4F708092EF0B65A00AA5C45 /* NotebookLibraryPersistence.swift */,
+				C4F7080A2EF0B65A00AA5C45 /* LibraryRootView.swift */,
+				C4F7080B2EF0B65A00AA5C45 /* NotebookPageStore.swift */,
+				C4F7080C2EF0B65A00AA5C45 /* NotebookPageView.swift */,
+				C4F7080D2EF0B65A00AA5C45 /* NotebookContainerView.swift */,
+				C4F7080F2EF0B65A00AA5C45 /* NotebookDecorations.swift */,
+				C4F70A062EF0B65A00AA5CAA /* InkTileCache.swift */,
+				C4F708102EF0B65A00AA5C45 /* SessionStatePersistence.swift */,
+				C4F70A002EF0B65A00AA5CAA /* VoiceRecordingManager.swift */,
+				C4F70A022EF0B65A00AA5CAA /* VoiceRecording.swift */,
+				C4F70A042EF0B65A00AA5CAA /* VoiceRecorderHUD.swift */,
+				C4F70B132EF0B65A00AA5CCF /* VoiceRecordingHistorySheet.swift */,
+				C4F70B152EF0B65A00AA5CD0 /* AIChatPersistence.swift */,
+				C4F7080E2EF0B65A00AA5C45 /* Assets.xcassets */,
+				C4F70B102EF0B65A00AA5CCC /* Info.plist */,
+			);
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -106,9 +163,6 @@
 			buildRules = (
 			);
 			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				C4F7076C2EF0B65700AA5C45 /* ainotebook */,
 			);
 			name = ainotebook;
 			packageProductDependencies = (
@@ -130,9 +184,6 @@
 			dependencies = (
 				C4F707792EF0B65900AA5C45 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				C4F7077A2EF0B65900AA5C45 /* ainotebookTests */,
-			);
 			name = ainotebookTests;
 			packageProductDependencies = (
 			);
@@ -152,9 +203,6 @@
 			);
 			dependencies = (
 				C4F707832EF0B65900AA5C45 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				C4F707842EF0B65900AA5C45 /* ainotebookUITests */,
 			);
 			name = ainotebookUITests;
 			packageProductDependencies = (
@@ -212,6 +260,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C4F7082D2EF0B65A00AA5C45 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -236,6 +285,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C4F708202EF0B65A00AA5C45 /* ainotebookApp.swift in Sources */,
+				C4F708212EF0B65A00AA5C45 /* ContentView.swift in Sources */,
+				C4F708232EF0B65A00AA5C45 /* CanvasController.swift in Sources */,
+				C4F708252EF0B65A00AA5C45 /* CustomInkView.swift in Sources */,
+				C4F708242EF0B65A00AA5C45 /* PencilCanvasView.swift in Sources */,
+				C4F708262EF0B65A00AA5C45 /* DrawingPersistence.swift in Sources */,
+				C4F708272EF0B65A00AA5C45 /* NotebookModels.swift in Sources */,
+				C4F708282EF0B65A00AA5C45 /* NotebookLibraryPersistence.swift in Sources */,
+				C4F708292EF0B65A00AA5C45 /* LibraryRootView.swift in Sources */,
+				C4F7082A2EF0B65A00AA5C45 /* NotebookPageStore.swift in Sources */,
+				C4F7082B2EF0B65A00AA5C45 /* NotebookPageView.swift in Sources */,
+				C4F7082C2EF0B65A00AA5C45 /* NotebookContainerView.swift in Sources */,
+				C4F7082E2EF0B65A00AA5C45 /* NotebookDecorations.swift in Sources */,
+				C4F708302EF0B65A00AA5C45 /* SessionStatePersistence.swift in Sources */,
+				C4F70A012EF0B65A00AA5CAA /* VoiceRecordingManager.swift in Sources */,
+				C4F70A032EF0B65A00AA5CAA /* VoiceRecording.swift in Sources */,
+				C4F70A052EF0B65A00AA5CAA /* VoiceRecorderHUD.swift in Sources */,
+				C4F70B142EF0B65A00AA5CCF /* VoiceRecordingHistorySheet.swift in Sources */,
+				C4F70B152EF0B65A00AA5CD0 /* AIChatPersistence.swift in Sources */,
+				C4F70A072EF0B65A00AA5CAA /* InkTileCache.swift in Sources */,
+				C4F708222EF0B65A00AA5C45 /* NotebookView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -391,19 +461,14 @@
 		C4F7078C2EF0B65900AA5C45 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9G8RQX8VS9;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access is needed to insert photos into notes.";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -420,19 +485,14 @@
 		C4F7078D2EF0B65900AA5C45 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9G8RQX8VS9;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access is needed to insert photos into notes.";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

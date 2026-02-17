@@ -6,15 +6,24 @@ struct LibraryRootView: View {
     @State private var showingNewNotebook = false
     @State private var renameNotebookID: Notebook.ID?
     @State private var hasLoadedLibrary = false
+    @State private var hasRestoredSession = false
+    @State private var showingTrash = false
+    @State private var showingMarketplace = false
+    @State private var prefersDarkMode = ThemePreference.load()
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            LibraryView(notebooks: notebooks,
+            LibraryView(notebooks: activeNotebooks,
                         onOpen: openNotebook,
                         onNewNotebook: { showingNewNotebook = true },
                         onDelete: deleteNotebook,
                         onRenameRequest: { notebook in renameNotebookID = notebook.id },
-                        onFavoriteToggle: toggleFavorite)
+                        onFavoriteToggle: toggleFavorite,
+                        onOpenTrash: { showingTrash = true },
+                        onOpenMarketplace: { showingMarketplace = true },
+                        trashCount: trashedNotebooks.count,
+                        prefersDarkMode: prefersDarkMode,
+                        onToggleDarkMode: toggleTheme)
                 .navigationDestination(for: Notebook.ID.self) { id in
                     if let binding = binding(for: id) {
                         NotebookContainerView(notebook: binding)
@@ -27,7 +36,19 @@ struct LibraryRootView: View {
             NewNotebookSheet { notebook in
                 notebooks.append(notebook)
                 navigationPath = [notebook.id]
+                SessionStatePersistence.save(notebookID: notebook.id,
+                                              pageIndex: notebook.currentPageIndex)
             }
+        }
+        .sheet(isPresented: $showingTrash) {
+            NotebookTrashSheet(notebooks: trashedNotebooks,
+                               onRestore: restoreNotebook,
+                               onDeleteForever: permanentlyDeleteNotebook) {
+                showingTrash = false
+            }
+        }
+        .sheet(isPresented: $showingMarketplace) {
+            NotebookMarketplaceSheet(onDismiss: { showingMarketplace = false })
         }
         .sheet(item: Binding<RenameSession?>(
             get: { renameNotebookID.map(RenameSession.init) },
@@ -47,6 +68,12 @@ struct LibraryRootView: View {
         .onChange(of: notebooks) { updated in
             NotebookLibraryPersistence.save(updated)
         }
+        .preferredColorScheme(navigationPath.isEmpty ? (prefersDarkMode ? .dark : .light) : nil)
+    }
+
+    private func toggleTheme() {
+        prefersDarkMode.toggle()
+        ThemePreference.save(prefersDarkMode)
     }
 
     private func binding(for id: Notebook.ID) -> Binding<Notebook>? {
@@ -55,7 +82,10 @@ struct LibraryRootView: View {
     }
 
     private func openNotebook(_ notebook: Notebook) {
+        guard !notebook.isTrashed else { return }
         updateLastOpened(for: notebook.id)
+        SessionStatePersistence.save(notebookID: notebook.id,
+                                      pageIndex: notebook.currentPageIndex)
         navigationPath = [notebook.id]
     }
 
@@ -66,7 +96,9 @@ struct LibraryRootView: View {
     }
 
     private func deleteNotebook(_ notebook: Notebook) {
-        notebooks.removeAll { $0.id == notebook.id }
+        guard let index = notebooks.firstIndex(where: { $0.id == notebook.id }) else { return }
+        notebooks[index].isTrashed = true
+        SessionStatePersistence.clearIfMatching(notebook.id)
     }
 
     private func toggleFavorite(_ notebook: Notebook) {
@@ -83,6 +115,43 @@ struct LibraryRootView: View {
         } else {
             notebooks = Notebook.sampleData
         }
+
+        restoreLastSessionIfNeeded()
+    }
+
+    private func restoreLastSessionIfNeeded() {
+        guard !hasRestoredSession,
+              let (notebookID, pageIndex) = SessionStatePersistence.load(),
+              let index = notebooks.firstIndex(where: { $0.id == notebookID }) else { return }
+
+        guard !notebooks[index].isTrashed else { return }
+
+        let pageClamp = max(0, min(pageIndex, notebooks[index].pages.count - 1))
+        notebooks[index].currentPageIndex = pageClamp
+        navigationPath = [notebookID]
+        hasRestoredSession = true
+    }
+
+    private func restoreNotebook(_ notebook: Notebook) {
+        guard let index = notebooks.firstIndex(where: { $0.id == notebook.id }) else { return }
+        notebooks[index].isTrashed = false
+    }
+
+    private func permanentlyDeleteNotebook(_ notebook: Notebook) {
+        notebooks.removeAll { $0.id == notebook.id }
+        SessionStatePersistence.clearIfMatching(notebook.id)
+        DrawingPersistence.deleteNotebook(notebookID: notebook.id)
+        VoiceRecorderManager.clearNotebookRecordings(notebookID: notebook.id)
+        AIChatPersistence.delete(for: notebook.id)
+        ImagePersistence.deleteNotebook(notebookID: notebook.id)
+    }
+
+    private var activeNotebooks: [Notebook] {
+        notebooks.filter { !$0.isTrashed }
+    }
+
+    private var trashedNotebooks: [Notebook] {
+        notebooks.filter { $0.isTrashed }
     }
 }
 
@@ -97,29 +166,53 @@ struct LibraryView: View {
     var onDelete: (Notebook) -> Void
     var onRenameRequest: (Notebook) -> Void
     var onFavoriteToggle: (Notebook) -> Void
+    var onOpenTrash: () -> Void
+    var onOpenMarketplace: () -> Void
+    var trashCount: Int
+    var prefersDarkMode: Bool
+    var onToggleDarkMode: () -> Void
 
     private let gridItems = Array(repeating: GridItem(.flexible(), spacing: 18), count: 3)
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: gridItems, spacing: 18) {
-                NewNotebookCard(action: onNewNotebook)
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 12) {
+                    Text("Library")
+                        .font(.system(size: 34, weight: .bold))
+                    Spacer()
+                    LibraryIconButton(systemName: prefersDarkMode ? "sun.max" : "moon",
+                                      label: "Toggle theme",
+                                      action: onToggleDarkMode)
+                    LibraryIconButton(systemName: "bag",
+                                      label: "Marketplace",
+                                      action: onOpenMarketplace)
+                    LibraryIconButton(systemName: "trash",
+                                      label: "Trash",
+                                      badge: trashCount,
+                                      action: onOpenTrash)
+                }
 
-                ForEach(notebooks) { notebook in
-                    NotebookCardView(notebook: notebook)
-                        .onTapGesture { onOpen(notebook) }
-                        .contextMenu {
-                            Button("Rename", action: { onRenameRequest(notebook) })
-                            Button(notebook.isFavorite ? "Unfavorite" : "Favorite", action: { onFavoriteToggle(notebook) })
-                            Divider()
-                            Button(role: .destructive) { onDelete(notebook) } label: { Text("Delete") }
-                        }
+                LazyVGrid(columns: gridItems, spacing: 18) {
+                    NewNotebookCard(action: onNewNotebook)
+
+                    ForEach(notebooks) { notebook in
+                        NotebookCardView(notebook: notebook)
+                            .onTapGesture { onOpen(notebook) }
+                            .contextMenu {
+                                Button("Rename", action: { onRenameRequest(notebook) })
+                                Button(notebook.isFavorite ? "Unfavorite" : "Favorite", action: { onFavoriteToggle(notebook) })
+                                Divider()
+                                Button(role: .destructive) { onDelete(notebook) } label: { Text("Move to Trash") }
+                            }
+                    }
                 }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 28)
         }
-        .navigationTitle("Library")
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -127,25 +220,55 @@ struct NotebookCardView: View {
     let notebook: Notebook
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(notebook.coverColor)
-                .frame(height: 120)
-                .overlay(
-                    Text(notebook.title)
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(12), alignment: .bottomLeading)
+        NotebookCardCover(notebook: notebook)
+            .frame(height: 190)
+    }
+}
 
-            Text("Last opened \(formatted(date: notebook.lastOpened))")
-                .font(.caption)
-                .foregroundColor(.secondary)
+private struct NotebookCardCover: View {
+    let notebook: Notebook
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(LinearGradient(colors: [notebook.coverColor.opacity(0.95),
+                                              notebook.coverColor.opacity(0.65)],
+                                     startPoint: .topLeading,
+                                     endPoint: .bottomTrailing))
+                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 4)
+
+            VStack(spacing: 16) {
+                if notebook.isFavorite {
+                    Image(systemName: "star.fill")
+                        .foregroundColor(.white.opacity(0.9))
+                        .font(.title3)
+                }
+
+                Spacer()
+
+                Text(notebook.title)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+
+                Spacer()
+
+                HStack {
+                    Text("\(notebook.pages.count) pages")
+                    Spacer()
+                    Text(formatted(date: notebook.lastOpened))
+                }
+                .font(.caption.bold())
+                .foregroundColor(.white.opacity(0.92))
+            }
+            .padding(24)
         }
     }
 
     private func formatted(date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateStyle = .medium
+        formatter.dateStyle = .short
         return formatter.string(from: date)
     }
 }
@@ -169,11 +292,164 @@ struct NewNotebookCard: View {
     }
 }
 
+private struct NotebookTrashSheet: View {
+    var notebooks: [Notebook]
+    var onRestore: (Notebook) -> Void
+    var onDeleteForever: (Notebook) -> Void
+    var onDismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if notebooks.isEmpty {
+                    VStack(alignment: .center, spacing: 8) {
+                        Image(systemName: "trash")
+                            .font(.title)
+                            .foregroundColor(.secondary)
+                        Text("Trash is empty")
+                            .font(.headline)
+                        Text("Notebooks you delete will appear here.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                } else {
+                    ForEach(notebooks) { notebook in
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(notebook.coverColor)
+                                .frame(width: 28, height: 28)
+                            VStack(alignment: .leading) {
+                                Text(notebook.title)
+                                    .font(.headline)
+                                Text("Last opened \(formatted(date: notebook.lastOpened))")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            Button { onRestore(notebook) } label: {
+                                Label("Restore", systemImage: "arrow.uturn.backward")
+                            }
+                            Button(role: .destructive) { onDeleteForever(notebook) } label: {
+                                Label("Delete Permanently", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button("Delete", role: .destructive) {
+                                onDeleteForever(notebook)
+                            }
+                            Button("Restore") {
+                                onRestore(notebook)
+                            }
+                            .tint(.green)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Trash")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done", action: onDismiss)
+                }
+            }
+        }
+    }
+
+    private func formatted(date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+}
+
+private struct NotebookMarketplaceSheet: View {
+    var onDismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "bag")
+                    .font(.system(size: 48))
+                    .foregroundColor(.accentColor)
+                Text("Marketplace coming soon")
+                    .font(.title3.bold())
+                Text("We’re curating templates and covers you can drop directly into your notebooks.")
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Marketplace")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", action: onDismiss)
+                }
+            }
+        }
+    }
+}
+
+private enum ThemePreference {
+    private static let key = "NotebookThemePreference"
+
+    static func load() -> Bool {
+        UserDefaults.standard.bool(forKey: key)
+    }
+
+    static func save(_ isDark: Bool) {
+        UserDefaults.standard.set(isDark, forKey: key)
+    }
+}
+
+private struct LibraryIconButton: View {
+    var systemName: String
+    var label: String
+    var badge: Int? = nil
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .topTrailing) {
+                Circle()
+                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: systemName)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.primary)
+                    )
+
+                if let badge, badge > 0 {
+                    Text("\(min(badge, 99))")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.red, in: Capsule())
+                        .foregroundColor(.white)
+                        .offset(x: 10, y: -10)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
+    }
+}
+
+
 struct NewNotebookSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var title: String = "My Notebook"
+    @State private var title: String = "My Subject"
     @State private var selectedColor: Color = Color(red: 0.28, green: 0.4, blue: 0.9)
     @State private var paperStyle: PaperStyle = .grid
+    @State private var paperColor: PaperColor = .classic
+    @State private var showingPDFPicker = false
+    @State private var isImportingPDF = false
+    @State private var importErrorMessage: String?
     var onCreate: (Notebook) -> Void
 
     private let colorOptions: [Color] = [
@@ -184,26 +460,43 @@ struct NewNotebookSheet: View {
         NavigationStack {
             Form {
                 Section(header: Text("Details")) {
-                    TextField("Notebook name", text: $title)
+                    TextField("Subject", text: $title)
                     Picker("Paper style", selection: $paperStyle) {
                         ForEach(PaperStyle.allCases) { style in
                             Text(style.rawValue).tag(style)
                         }
                     }
+                    Picker("Page color", selection: $paperColor) {
+                        ForEach(PaperColor.allCases) { color in
+                            Text(color.rawValue).tag(color)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
 
                 Section(header: Text("Cover")) {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4)) {
                         ForEach(colorOptions, id: \.self) { color in
-                            Circle()
-                                .fill(color)
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Circle().stroke(Color.white.opacity(color == selectedColor ? 1 : 0), lineWidth: 2)
-                                )
+                            CoverColorOption(color: color,
+                                             isSelected: color == selectedColor)
                                 .onTapGesture { selectedColor = color }
                         }
                     }
+                }
+
+                Section(header: Text("Import"), footer: Text("Each PDF page becomes its own notebook page you can annotate.")) {
+                    Button {
+                        showingPDFPicker = true
+                    } label: {
+                        HStack {
+                            Label("Import PDF as Notebook", systemImage: "doc.badge.plus")
+                            Spacer()
+                            if isImportingPDF {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isImportingPDF)
                 }
             }
             .navigationTitle("New Notebook")
@@ -213,14 +506,102 @@ struct NewNotebookSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
-                        let notebook = Notebook(title: title, coverColor: selectedColor, paperStyle: paperStyle)
+                        let notebook = Notebook(title: title,
+                                                coverColor: selectedColor,
+                                                paperStyle: paperStyle,
+                                                paperColor: paperColor)
                         onCreate(notebook)
                         dismiss()
                     }
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || isImportingPDF)
+                }
+            }
+            .sheet(isPresented: $showingPDFPicker) {
+                PDFDocumentPicker(onPick: { url in
+                    showingPDFPicker = false
+                    importPDFNotebook(from: url)
+                }, onCancel: {
+                    showingPDFPicker = false
+                })
+            }
+            .alert("Import Failed",
+                   isPresented: Binding(get: { importErrorMessage != nil },
+                                        set: { if !$0 { importErrorMessage = nil } })) {
+                Button("OK", role: .cancel) { importErrorMessage = nil }
+            } message: {
+                Text(importErrorMessage ?? "Unknown error")
+            }
+        }
+    }
+
+    private func importPDFNotebook(from url: URL) {
+        guard !isImportingPDF else { return }
+        isImportingPDF = true
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTitle: String
+        if trimmedTitle.isEmpty || trimmedTitle == "My Subject" {
+            resolvedTitle = url.deletingPathExtension().lastPathComponent
+        } else {
+            resolvedTitle = trimmedTitle
+        }
+
+        Task {
+            do {
+                let notebook = try await NotebookPDFImporter.importNotebook(from: url,
+                                                                            preferredTitle: resolvedTitle,
+                                                                            coverColor: selectedColor,
+                                                                            paperStyle: paperStyle,
+                                                                            paperColor: paperColor)
+                await MainActor.run {
+                    onCreate(notebook)
+                    isImportingPDF = false
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    importErrorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    isImportingPDF = false
                 }
             }
         }
+    }
+}
+
+private struct CoverColorOption: View {
+    let color: Color
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(LinearGradient(colors: [color.opacity(0.98), color.opacity(0.6)],
+                                     startPoint: .topLeading,
+                                     endPoint: .bottomTrailing))
+                .frame(height: 54)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.white.opacity(isSelected ? 1.0 : 0.25), lineWidth: isSelected ? 3 : 1)
+                )
+                .shadow(color: Color.black.opacity(0.15), radius: 6, x: 0, y: 3)
+
+            if isSelected {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.9), lineWidth: 1.5)
+                    .blur(radius: 1)
+                    .padding(3)
+                    .blendMode(.screen)
+
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(
+                        LinearGradient(colors: [Color.white.opacity(0.25), Color.clear],
+                                       startPoint: .topLeading,
+                                       endPoint: .bottomTrailing)
+                    )
+                    .padding(2)
+                    .allowsHitTesting(false)
+            }
+        }
+        .padding(4)
     }
 }
 
@@ -232,7 +613,7 @@ struct RenameNotebookSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Notebook name", text: $title)
+                TextField("Subject", text: $title)
             }
             .navigationTitle("Rename Notebook")
             .toolbar {

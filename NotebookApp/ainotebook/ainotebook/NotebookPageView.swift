@@ -1,6 +1,7 @@
 import SwiftUI
+import PencilKit
 import UIKit
-import AVFoundation
+import UniformTypeIdentifiers
 
 private struct PageVisibilityPreferenceKey: PreferenceKey {
     static var defaultValue: [UUID: CGFloat] = [:]
@@ -11,23 +12,39 @@ private struct PageVisibilityPreferenceKey: PreferenceKey {
 }
 
 struct NotebookPageView: View {
+    @Binding var notebook: Notebook
     @ObservedObject var pageStore: NotebookPageStore
     var paperStyle: PaperStyle
-    private static let palette: [UIColor] = [
+    var pageColor: PaperColor
+    private let coverPageID = UUID()
+    private let notebookID: UUID
+    private static let penPalette: [UIColor] = [
         UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0),
         UIColor(red: 0.16, green: 0.48, blue: 0.32, alpha: 1.0),
         UIColor(red: 0.10, green: 0.10, blue: 0.10, alpha: 1.0),
         UIColor(red: 0.72, green: 0.20, blue: 0.18, alpha: 1.0)
     ]
 
-    private static let thicknessOptions: [CGFloat] = [2.2, 3.2, 4.2]
+    private static let highlighterPalette: [UIColor] = [
+        UIColor(red: 1.00, green: 0.93, blue: 0.48, alpha: 1.0),
+        UIColor(red: 1.00, green: 0.82, blue: 0.38, alpha: 1.0),
+        UIColor(red: 0.98, green: 0.66, blue: 0.66, alpha: 1.0),
+        UIColor(red: 0.68, green: 0.88, blue: 0.53, alpha: 1.0),
+        UIColor(red: 0.58, green: 0.78, blue: 0.96, alpha: 1.0)
+    ]
+
+    private static let thicknessOptions: [CGFloat] = [0.7, 3.0, 6.0]
     private let scrollSpaceName = "NotebookScroll"
-    private let defaultPageSize = CGSize(width: 800, height: 1000)
+    private let basePageSize = CGSize(width: 800, height: 1000)
+    private let shapePasteboardType = "com.ainotebook.shapeKind"
 
     @State private var isLoadingNextPage = false
     @State private var currentStrokeColor: UIColor
+    @State private var penStrokeColor: UIColor
+    @State private var highlighterStrokeColor: UIColor
     @State private var currentStrokeWidth: CGFloat
-    @State private var isUsingEraser = false
+    @State private var currentTool: CanvasDrawingTool = .pen
+    @State private var lastDrawingTool: CanvasDrawingTool = .pen
     @State private var showCustomColorPicker = false
     @State private var customColor: Color = Color(red: 0.95, green: 0.55, blue: 0.2)
     @State private var paletteSelection = CGPoint(x: 0.6, y: 0.3)
@@ -41,36 +58,78 @@ struct NotebookPageView: View {
         Color(red: 0.74, green: 0.41, blue: 0.89),
         Color(red: 0.95, green: 0.52, blue: 0.70)
     ]
-    @State private var isHighlighterActive = false
-    @State private var showImagePicker = false
-    @State private var showImagePickerSheet = false
-    @State private var imagePickerSource: UIImagePickerController.SourceType = .photoLibrary
-    @State private var isRecording = false
-    @State private var audioRecorder: AVAudioRecorder?
-    @State private var showVoiceNotes = false
-    @State private var audioPlayer: AVAudioPlayer?
-    @State private var eraserMode: CanvasController.EraserMode = .stroke
     @State private var showPageIndicator = false
     @State private var pageIndicatorWorkItem: DispatchWorkItem?
     @State private var scrollProxy: ScrollViewProxy?
     @State private var isProgrammaticJump = false
+    @State private var isCoverActive = false
+    @State private var didApplyInitialPage = false
+    @State private var showImageOptions = false
+    @State private var showShapesSheet = false
+    @State private var imagePickerSource: ImagePickerSource?
+    @State private var pendingImagePageID: UUID?
+    @State private var showAIChat = false
+    @State private var aiMessages: [AIChatMessage] = AIChatMessage.seedConversation
+    @State private var aiQueryMode: AIQueryMode = .text
+    @State private var aiPanelDragOffset: CGFloat = 0
+    /// Holds the currently editable image so PencilKit interaction can be paused while the finger manipulates it.
+    @State private var editingAttachmentContext: EditingAttachmentContext?
+    @State private var croppingAttachmentContext: CroppingAttachmentContext?
+    @State private var showExportSheet = false
+    @State private var exportSelection: Set<UUID> = []
+    @State private var exportFormat: NotebookExportFormat = .pdf
+    @State private var isExportingSelection = false
+    @State private var exportErrorMessage: String?
+    @State private var shareURLs: [URL] = []
+    @State private var isPresentingShareSheet = false
+    @State private var showVoiceRecorderHUD = false
+    @State private var showRecordingHistory = false
+    @State private var showCalculator = false
+    @ObservedObject private var voiceRecorder: VoiceRecorderManager
+    @State private var shapeAttachmentKinds: [UUID: ShapeTemplate.Kind] = [:]
+    @State private var pasteboardHasImage = UIPasteboard.general.hasImages
 
-    init(paperStyle: PaperStyle = .grid, pageStore: NotebookPageStore) {
+    private var workspaceBackground: Color {
+        switch pageColor {
+        case .classic:
+            return Color(red: 0.97, green: 0.96, blue: 0.92)
+        case .white:
+            return Color(uiColor: .systemGray6)
+        }
+    }
+
+    init(paperStyle: PaperStyle = .grid,
+         pageColor: PaperColor = .classic,
+         pageStore: NotebookPageStore,
+         notebook: Binding<Notebook>,
+         voiceRecorder: VoiceRecorderManager) {
         self.paperStyle = paperStyle
+        self.pageColor = pageColor
         self._pageStore = ObservedObject(wrappedValue: pageStore)
-        let defaultColor = Self.palette[0]
+        self._notebook = notebook
+        self.notebookID = notebook.wrappedValue.id
+        let defaultColor = Self.penPalette[0]
+        let defaultHighlighter = Self.highlighterPalette[0]
         let defaultWidth = Self.thicknessOptions[1]
         _currentStrokeColor = State(initialValue: defaultColor)
+        _penStrokeColor = State(initialValue: defaultColor)
+        _highlighterStrokeColor = State(initialValue: defaultHighlighter)
         _currentStrokeWidth = State(initialValue: defaultWidth)
+        _voiceRecorder = ObservedObject(wrappedValue: voiceRecorder)
+        if let savedMessages = AIChatPersistence.load(for: notebook.wrappedValue.id), !savedMessages.isEmpty {
+            _aiMessages = State(initialValue: savedMessages)
+        }
     }
 
     var body: some View {
         GeometryReader { geometry in
-            let pageSize = defaultPageSize
-            let viewportHeight = max(min(pageSize.height + 60, geometry.size.height - 80), 420)
+            let pageSize = basePageSize
+            let pageScale = self.pageScale(for: geometry.size.width)
+            let scaledHeight = pageSize.height * pageScale
+            let viewportHeight = max(min(scaledHeight + 60, geometry.size.height - 80), 420)
 
             ZStack(alignment: .top) {
-                Color(red: 0.97, green: 0.96, blue: 0.92)
+                workspaceBackground
                     .ignoresSafeArea()
 
                 VStack(spacing: 16) {
@@ -80,10 +139,19 @@ struct NotebookPageView: View {
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
                             LazyVStack(spacing: 40) {
-                                    ForEach(pageStore.pages, id: \.id) { controller in
-                                        notebookPage(for: controller,
-                                                     pageSize: pageSize,
-                                                     viewportHeight: viewportHeight)
+                                coverPage(pageSize: pageSize, viewportHeight: viewportHeight)
+                                    .frame(width: pageSize.width, height: pageSize.height)
+                                    .scaleEffect(pageScale, anchor: .center)
+                                    .frame(width: pageSize.width * pageScale,
+                                           height: pageSize.height * pageScale,
+                                           alignment: .center)
+                                    .id(coverPageID)
+
+                                ForEach(pageStore.pages, id: \.id) { controller in
+                                    notebookPage(for: controller,
+                                                 pageSize: pageSize,
+                                                 viewportHeight: viewportHeight,
+                                                 pageScale: pageScale)
                                         .frame(maxWidth: .infinity)
                                         .id(controller.id)
                                 }
@@ -100,6 +168,7 @@ struct NotebookPageView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .onAppear {
                             scrollProxy = proxy
+                            scrollToActivePage(animated: false)
                         }
                     }
                 }
@@ -107,6 +176,18 @@ struct NotebookPageView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .onPreferenceChange(PageVisibilityPreferenceKey.self) { values in
                     guard let closest = values.min(by: { $0.value < $1.value }) else { return }
+                    if closest.key == coverPageID {
+                        if !isCoverActive {
+                            isCoverActive = true
+                            showPageIndicatorTemporary()
+                        }
+                        return
+                    }
+
+                    if isCoverActive {
+                        isCoverActive = false
+                    }
+
                     guard !isProgrammaticJump else { return }
                     if pageStore.activePageID != closest.key {
                         pageStore.activePageID = closest.key
@@ -144,124 +225,255 @@ struct NotebookPageView: View {
                     .transition(.opacity)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in
+            refreshPasteboardState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            let orientation = UIDevice.current.orientation
+            guard orientation.isValidInterfaceOrientation else { return }
+            scrollToActivePage(animated: false)
+        }
+        .onChange(of: currentStrokeColor) { newColor in
+            updateSelectedAttachmentColor(with: newColor)
+        }
+        .overlay(alignment: .leading) {
+            if showAIChat {
+                let panelWidth = min(520, UIScreen.main.bounds.width * 0.5)
+                AIChatSheet(messages: $aiMessages,
+                            queryMode: $aiQueryMode,
+                            onClose: { showAIChat = false },
+                            onNewChat: resetAIChat)
+                    .frame(width: panelWidth)
+                    .frame(maxHeight: .infinity)
+                    .padding(.top, 80)
+                    .padding(.bottom, 8)
+                    .offset(x: aiPanelDragOffset)
+                    .gesture(
+                        DragGesture(minimumDistance: 10)
+                            .onChanged { value in
+                                aiPanelDragOffset = min(0, value.translation.width)
+                            }
+                            .onEnded { value in
+                                if value.translation.width < -panelWidth * 0.25 {
+                                    showAIChat = false
+                                }
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+                                    aiPanelDragOffset = 0
+                                }
+                            }
+                    )
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: showAIChat)
+        .onChange(of: showAIChat) { isVisible in
+            if !isVisible {
+                aiPanelDragOffset = 0
+            }
+        }
+        .onChange(of: aiMessages) { messages in
+            AIChatPersistence.save(messages, for: notebookID)
+        }
         .onChange(of: customColor) { _ in
             applyCustomColorSelection()
         }
-        .sheet(isPresented: $showImagePickerSheet) {
-            ImagePicker(sourceType: imagePickerSource) { image in
-                showImagePickerSheet = false
-                guard let image else { return }
-                insertImage(image)
-            }
-        }
-        .sheet(isPresented: $showVoiceNotes) {
-            VoiceNotesList(notes: activePageController?.voiceNotes ?? [],
-                           onClose: { showVoiceNotes = false },
-                           onPlay: { note in playVoiceNote(note) })
-        }
-        .onChange(of: activePageController?.imageAttachments ?? []) { _ in
-            // ensure selection resets when switching pages
-            eraserMode = activePageController?.eraserMode ?? .stroke
-        }
         .onChange(of: pageStore.activePageID) { id in
             guard let id = id else { return }
-            isProgrammaticJump = true
-            withAnimation {
-                scrollProxy?.scrollTo(id, anchor: .top)
+            if let index = pageStore.pages.firstIndex(where: { $0.id == id }) {
+                notebook.currentPageIndex = index
+                SessionStatePersistence.save(notebookID: notebook.id, pageIndex: index)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                isProgrammaticJump = false
-            }
+            scrollToActivePage()
             showPageIndicatorTemporary()
+        }
+        .onAppear {
+            ensureInitialPageSelection()
+        }
+        .sheet(isPresented: $showExportSheet) {
+            PageExportSheet(pages: pageStore.pageModels,
+                            selectedPageIDs: $exportSelection,
+                            format: $exportFormat,
+                            isExporting: isExportingSelection,
+                            errorMessage: exportErrorMessage,
+                            onSelectAll: {
+                                exportSelection = Set(pageStore.pageModels.map { $0.id })
+                            },
+                            onClearSelection: {
+                                exportSelection.removeAll()
+                            },
+                            onExport: startExport)
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $isPresentingShareSheet, onDismiss: cleanupShareFiles) {
+            ShareSheet(activityItems: shareURLs)
+        }
+        .sheet(isPresented: $showImageOptions) {
+            ImageInsertOptionsSheet(canUseCamera: ImagePickerSource.camera.isAvailable,
+                                    onSelect: { source in
+                                        presentPicker(for: source)
+                                    },
+                                    onCancel: {
+                                        cancelImageInsertion()
+                                    })
+            .presentationDetents([.medium])
+        }
+        .sheet(item: $imagePickerSource) { source in
+            CroppingImagePicker(sourceType: source.uiKitSource) { image in
+                handleImageSelection(image)
+            } onCancel: {
+                cancelImageInsertion()
+            }
+        }
+        .sheet(item: $croppingAttachmentContext) { context in
+            if let image = UIImage(data: context.attachment.imageData) {
+                AttachmentCropSheet(image: image,
+                                    onCancel: { croppingAttachmentContext = nil },
+                                    onSave: { cropped in
+                                        handleCroppedImage(cropped, for: context)
+                                        croppingAttachmentContext = nil
+                                    })
+            } else {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                    Text("Unable to load image for cropping.")
+                        .multilineTextAlignment(.center)
+                    Button("Close") {
+                        croppingAttachmentContext = nil
+                    }
+                }
+                .padding()
+            }
+        }
+        .sheet(isPresented: $showShapesSheet) {
+            ShapePickerSheet(onSelect: { shape in
+                insertShape(shape)
+                showShapesSheet = false
+            }, onClose: {
+                showShapesSheet = false
+            })
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .notebookRequestExport)) { _ in
+            presentExportOptions()
+        }
+        .overlay(alignment: .topTrailing) {
+            let currentPageID = pageStore.activePageID ?? pageStore.pages.first?.id
+            let currentPageLabel = pageLabel(for: currentPageID)
+            VStack(alignment: .trailing, spacing: 10) {
+                if voiceRecorder.isRecording {
+                    VoiceRecordingIndicator(duration: voiceRecorder.recordingDuration) {
+                        voiceRecorder.stopRecording()
+                    }
+                }
+
+                if showVoiceRecorderHUD {
+                    VoiceRecorderHUD(recorder: voiceRecorder,
+                                     currentPageID: currentPageID,
+                                     pageLabel: currentPageLabel,
+                                     onShowHistory: { showRecordingHistory = true },
+                                     onClose: { showVoiceRecorderHUD = false })
+                }
+            }
+            .padding(.trailing, 24)
+            .padding(.top, 80)
+        }
+        .onChange(of: voiceRecorder.isRecording) { isRecording in
+            if isRecording {
+                showVoiceRecorderHUD = false
+            }
+        }
+        .sheet(isPresented: $showRecordingHistory) {
+            VoiceRecordingHistorySheet(recorder: voiceRecorder,
+                                       pageStore: pageStore,
+                                       onClose: { showRecordingHistory = false })
+                .presentationDetents([.large])
+        }
+        .overlay {
+            if showCalculator {
+                ScientificCalculatorView(onClose: { showCalculator = false })
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(5)
+            }
+        }
+        .onDisappear {
+            voiceRecorder.stopRecordingIfNeeded()
         }
     }
 
     /// Compact toolbar styled like native iPadOS tools.
     private var toolbar: some View {
-        HStack(spacing: 18) {
-            toolButton(systemName: "pencil.tip", isActive: !isUsingEraser) {
-                isUsingEraser = false
-                isHighlighterActive = false
-                applyToolSettings(useEraser: false, useHighlighter: false)
-            }
-
-            toolButton(systemName: "eraser", isActive: isUsingEraser) {
-                isUsingEraser = true
-                isHighlighterActive = false
-                applyToolSettings(useEraser: true, useHighlighter: false)
-            }
-            .contextMenu {
-                ForEach(CanvasController.EraserMode.allCases, id: \.self) { mode in
-                    Button {
-                        eraserMode = mode
-                        isUsingEraser = true
-                        isHighlighterActive = false
-                        applyToolSettings(useEraser: true, useHighlighter: false, eraserMode: mode)
-                    } label: {
-                        Label(mode == .precision ? "Precision Eraser" : "Stroke Eraser",
-                              systemImage: eraserMode == mode ? "checkmark" : "circle")
+        HStack(spacing: 12) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 18) {
+                    toolButton(systemName: "pencil.tip", isActive: currentTool == .pen) {
+                        selectTool(.pen)
                     }
+
+                    toolButton(isActive: currentTool == .highlighter, action: { selectTool(.highlighter) }) {
+                        HighlighterIcon(isActive: currentTool == .highlighter)
+                    }
+
+                    toolButton(systemName: "eraser", isActive: currentTool == .eraser) {
+                        selectTool(.eraser)
+                    }
+
+                    toolButton(systemName: "lasso", isActive: currentTool == .selection) {
+                        selectTool(.selection)
+                    }
+
+                    Divider().frame(height: 20)
+
+                    colorButtons
+
+                    Divider().frame(height: 20)
+
+                    thicknessButtons
+
+                    Divider().frame(height: 20)
+
+                    Button(action: { showCalculator = true }) {
+                        Image(systemName: "function")
+                    }
+                    .buttonStyle(ToolbarButtonStyle(isActive: false))
                 }
+                .padding(.horizontal, 4)
             }
 
-            toolButton(systemName: "highlighter", isActive: isHighlighterActive) {
-                toggleHighlighter()
-            }
-
-            Divider().frame(height: 20)
-
-            colorButtons
-
-            Divider().frame(height: 20)
-
-            thicknessButtons
-
-            Divider().frame(height: 20)
-
-            Button(action: {
-                imagePickerSource = .photoLibrary
-                showImagePicker = true
-            }) {
-                Image(systemName: "photo")
-            }
-            .buttonStyle(ToolbarButtonStyle(isActive: false))
-            .confirmationDialog("Insert Image", isPresented: $showImagePicker, titleVisibility: .visible) {
-                Button("Choose from Photos") {
-                    imagePickerSource = .photoLibrary
-                    showImagePicker = false
-                    presentImagePicker()
+            HStack(spacing: 12) {
+                Button(action: { activePageController?.undo() }) {
+                    Image(systemName: "arrow.uturn.backward")
                 }
-                Button("Take Photo") {
-                    imagePickerSource = .camera
-                    showImagePicker = false
-                    presentImagePicker()
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
+                .disabled(!(activePageController?.canUndo ?? false))
+                .opacity((activePageController?.canUndo ?? false) ? 1.0 : 0.4)
+
+                Button(action: { activePageController?.redo() }) {
+                    Image(systemName: "arrow.uturn.forward")
                 }
-                Button("Cancel", role: .cancel) { showImagePicker = false }
-            }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
+                .disabled(!(activePageController?.canRedo ?? false))
+                .opacity((activePageController?.canRedo ?? false) ? 1.0 : 0.4)
 
-            Button(action: { toggleRecording() }) {
-                Image(systemName: isRecording ? "stop.circle.fill" : "mic")
-            }
-            .buttonStyle(ToolbarButtonStyle(isActive: isRecording))
-            .contextMenu {
-                Button("Voice Notes") { showVoiceNotes = true }
-            }
+                Button(action: presentImageOptions) {
+                    Image(systemName: "photo.on.rectangle")
+                }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
 
-            Spacer()
+                Button(action: { showShapesSheet = true }) {
+                    Image(systemName: "square.on.circle")
+                }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
 
-            Button(action: { activePageController?.undo() }) {
-                Image(systemName: "arrow.uturn.backward")
-            }
-            .buttonStyle(ToolbarButtonStyle(isActive: false))
-            .disabled(!(activePageController?.canUndo ?? false))
-            .opacity((activePageController?.canUndo ?? false) ? 1.0 : 0.4)
+                Button(action: { showVoiceRecorderHUD.toggle() }) {
+                    Image(systemName: "waveform.and.mic")
+                }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
 
-            Button(action: { activePageController?.redo() }) {
-                Image(systemName: "arrow.uturn.forward")
+                Button(action: { showAIChat = true }) {
+                    AISparkleGlyph()
+                }
+                .buttonStyle(ToolbarButtonStyle(isActive: false))
             }
-            .buttonStyle(ToolbarButtonStyle(isActive: false))
-            .disabled(!(activePageController?.canRedo ?? false))
-            .opacity((activePageController?.canRedo ?? false) ? 1.0 : 0.4)
         }
         .frame(height: 44)
         .padding(10)
@@ -270,20 +482,35 @@ struct NotebookPageView: View {
     }
 
     private var colorButtons: some View {
-        HStack(spacing: 12) {
-            ForEach(Array(Self.palette.enumerated()), id: \.offset) { _, color in
-                let isSelected = currentStrokeColor == color && !isUsingEraser
+        let palette = palette(for: displayedDrawingTool)
+
+        return HStack(spacing: 12) {
+            ForEach(Array(palette.enumerated()), id: \.offset) { (_, color) in
+                let isSelected = currentStrokeColor == color && displayedDrawingTool.isDrawingTool
                 Button(action: {
+                    let targetTool = displayedDrawingTool
                     currentStrokeColor = color
-                    isUsingEraser = false
-                    isHighlighterActive = false
-                    applyToolSettings(useEraser: false, strokeColor: color, useHighlighter: false)
+                    storeColor(color, for: targetTool)
+                    currentTool = targetTool
+                    lastDrawingTool = targetTool
+                    applyToolSettings(tool: targetTool, strokeColor: color)
                 }) {
                     Circle()
                         .fill(Color(color))
                         .frame(width: 22, height: 22)
+                        .background(
+                            Circle()
+                                .fill(Color.accentColor.opacity(isSelected ? 0.18 : 0))
+                                .blur(radius: isSelected ? 2 : 0)
+                        )
                         .overlay(
-                            Circle().stroke(Color.primary.opacity(isSelected ? 0.6 : 0), lineWidth: 1.5)
+                            Circle()
+                                .stroke(Color.white.opacity(isSelected ? 0.85 : 0), lineWidth: isSelected ? 1.4 : 0)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(Color.accentColor.opacity(isSelected ? 0.7 : 0), lineWidth: isSelected ? 2.5 : 0)
+                                .scaleEffect(isSelected ? 1.2 : 1.0)
                         )
                 }
                 .buttonStyle(PlainButtonStyle())
@@ -295,11 +522,12 @@ struct NotebookPageView: View {
 
     private var customColorButton: some View {
         let customUIColor = UIColor(customColor)
-        let isSelected = currentStrokeColor == customUIColor && !isUsingEraser
+        let activeTool = displayedDrawingTool
+        let isSelected = currentStrokeColor == customUIColor && activeTool.isDrawingTool
 
         return Button(action: {
-            isUsingEraser = false
-            applyCustomColorSelection()
+            let targetTool = activeTool
+            applyCustomColorSelection(for: targetTool)
             updatePaletteSelection(for: customColor)
             showCustomColorPicker = true
         }) {
@@ -318,12 +546,13 @@ struct NotebookPageView: View {
     private var thicknessButtons: some View {
         HStack(spacing: 10) {
             ForEach(Self.thicknessOptions, id: \.self) { width in
-                let isSelected = abs(currentStrokeWidth - width) < 0.1 && !isUsingEraser
+                let isSelected = abs(currentStrokeWidth - width) < 0.1 && displayedDrawingTool.isDrawingTool
                 Button(action: {
+                    let targetTool = displayedDrawingTool
                     currentStrokeWidth = width
-                    isUsingEraser = false
-                    isHighlighterActive = false
-                    applyToolSettings(useEraser: false, strokeWidth: width, useHighlighter: false)
+                    currentTool = targetTool
+                    lastDrawingTool = targetTool
+                    applyToolSettings(tool: targetTool, strokeWidth: width)
                 }) {
                     Capsule()
                         .fill(Color.primary.opacity(0.8))
@@ -337,12 +566,43 @@ struct NotebookPageView: View {
         }
     }
 
-    private func toolButton(systemName: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+    private var displayedDrawingTool: CanvasDrawingTool {
+        switch currentTool {
+        case .eraser, .selection:
+            return lastDrawingTool
+        default:
+            return currentTool
+        }
+    }
+
+    private func toolButton<Content: View>(isActive: Bool,
+                                           action: @escaping () -> Void,
+                                           @ViewBuilder label: () -> Content) -> some View {
         Button(action: action) {
+            label()
+        }
+        .buttonStyle(ToolbarButtonStyle(isActive: isActive))
+    }
+
+    private func toolButton(systemName: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        toolButton(isActive: isActive, action: action) {
             Image(systemName: systemName)
                 .symbolVariant(isActive ? .fill : .none)
         }
-        .buttonStyle(ToolbarButtonStyle(isActive: isActive))
+    }
+
+    private func selectTool(_ tool: CanvasDrawingTool) {
+        currentTool = tool
+        if tool.isDrawingTool {
+            lastDrawingTool = tool
+        }
+        if tool.isDrawingTool {
+            let color = lastColor(for: tool)
+            currentStrokeColor = color
+            applyToolSettings(tool: tool, strokeColor: color)
+        } else {
+            applyToolSettings(tool: tool)
+        }
     }
 
     private var addPagePrompt: some View {
@@ -370,14 +630,94 @@ struct NotebookPageView: View {
     }
 
     private var pageIndicatorText: String? {
+        if isCoverActive { return "Cover" }
         guard let activeID = pageStore.activePageID,
               let index = pageStore.pages.firstIndex(where: { $0.id == activeID }) else { return nil }
         return "Page \(index + 1) of \(pageStore.pages.count)"
     }
 
-    private func notebookPage(for controller: CanvasController, pageSize: CGSize, viewportHeight: CGFloat) -> some View {
-        PencilCanvasView(controller: controller, pageSize: pageSize, paperStyle: paperStyle)
-            .frame(width: pageSize.width, height: pageSize.height)
+    private func coverPage(pageSize: CGSize, viewportHeight: CGFloat) -> some View {
+        NotebookCoverPage(notebook: $notebook)
+            .shadow(color: Color.black.opacity(0.08), radius: 18, y: 8)
+            .padding(.horizontal, 4)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: PageVisibilityPreferenceKey.self,
+                                           value: [coverPageID: distanceToCenter(for: proxy, viewportHeight: viewportHeight)])
+                }
+            )
+    }
+
+    private func notebookPage(for controller: CanvasController,
+                              pageSize: CGSize,
+                              viewportHeight: CGFloat,
+                              pageScale: CGFloat) -> some View {
+        let pageID = controller.id
+        let attachments = canvasAttachments(for: pageID)
+        let binding = Binding<UUID?>(
+            get: {
+                guard editingAttachmentContext?.pageID == pageID else { return nil }
+                return editingAttachmentContext?.attachmentID
+            },
+            set: { newValue in
+                if let id = newValue {
+                    editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: id)
+                } else if editingAttachmentContext?.pageID == pageID {
+                    editingAttachmentContext = nil
+                }
+            }
+        )
+
+        let pageContent = PencilCanvasView(controller: controller,
+                                           pageSize: pageSize,
+                                           paperStyle: paperStyle,
+                                           paperColor: pageColor,
+                                           attachments: attachments,
+                                           editingAttachmentID: binding,
+                                           onAttachmentChanged: { updated in
+                                               handleAttachmentUpdate(updated, for: pageID)
+                                           },
+                                           onAttachmentDeleted: { imageID in
+                                               deleteAttachment(imageID, for: pageID)
+                                           },
+                                           onAttachmentDuplicated: { attachment in
+                                               duplicateAttachment(attachment, for: pageID, pageSize: pageSize)
+                                           },
+                                           onAttachmentCopied: { attachment in
+                                               copyAttachment(attachment)
+                                           },
+                                           onAttachmentCropped: { attachment in
+                                               startCropping(attachment, for: pageID, pageSize: pageSize)
+                                           },
+                                           onAttachmentDone: {
+                                               finalizeImageEditing()
+                                           },
+                                           onAttachmentTapOutside: {
+                                               handleTapOutsideEditing(for: pageID)
+                                           })
+        .frame(width: pageSize.width, height: pageSize.height)
+        .contentShape(Rectangle())
+        .gesture(pageTapGesture(attachments: attachments,
+                                pageID: pageID,
+                                pageSize: pageSize))
+        .onDrop(of: [UTType.image.identifier], delegate: AttachmentDropDelegate(pageSize: pageSize) { location, image in
+            handleDroppedImage(image,
+                               at: location,
+                               pageSize: pageSize,
+                               pageID: pageID)
+        })
+        .onAppear {
+            setCanvasInteraction(enabled: binding.wrappedValue == nil, for: controller)
+        }
+        .onChange(of: binding.wrappedValue) { newValue in
+            setCanvasInteraction(enabled: newValue == nil, for: controller)
+        }
+
+        return pageContent
+            .scaleEffect(pageScale, anchor: .center)
+            .frame(width: pageSize.width * pageScale,
+                   height: pageSize.height * pageScale,
+                   alignment: .center)
             .shadow(color: Color.black.opacity(0.08), radius: 18, y: 8)
             .padding(.horizontal, 4)
             .background(
@@ -388,6 +728,69 @@ struct NotebookPageView: View {
             )
     }
 
+    private func pageTapGesture(attachments: [CanvasAttachment],
+                                pageID: UUID,
+                                pageSize: CGSize) -> some Gesture {
+        SpatialTapGesture()
+            .onEnded { value in
+                handlePageTap(at: value.location,
+                              attachments: attachments,
+                              pageID: pageID,
+                              pageSize: pageSize)
+            }
+    }
+
+    private func handlePageTap(at location: CGPoint,
+                               attachments: [CanvasAttachment],
+                               pageID: UUID,
+                               pageSize: CGSize) {
+        if let editing = editingAttachmentContext {
+            guard editing.pageID == pageID else { return }
+            if let target = attachment(containing: location,
+                                       in: attachments,
+                                       pageSize: pageSize) {
+                editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: target.id)
+            } else {
+                handleTapOutsideEditing(for: pageID)
+            }
+            return
+        }
+
+        guard let target = attachment(containing: location, in: attachments, pageSize: pageSize) else {
+            return
+        }
+        editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: target.id)
+    }
+
+    private func attachment(containing point: CGPoint,
+                            in attachments: [CanvasAttachment],
+                            pageSize: CGSize) -> CanvasAttachment? {
+        guard point.x >= 0,
+              point.y >= 0,
+              point.x <= pageSize.width,
+              point.y <= pageSize.height else { return nil }
+
+        for attachment in attachments.reversed() {
+            if attachment.isLocked { continue }
+            if attachmentContains(point, attachment: attachment) {
+                return attachment
+            }
+        }
+        return nil
+    }
+
+    private func attachmentContains(_ point: CGPoint, attachment: CanvasAttachment) -> Bool {
+        let translated = CGPoint(x: point.x - attachment.center.x,
+                                 y: point.y - attachment.center.y)
+        let rotation = CGAffineTransform(rotationAngle: -attachment.rotation)
+        let aligned = translated.applying(rotation)
+        let rect = CGRect(x: -attachment.size.width / 2,
+                          y: -attachment.size.height / 2,
+                          width: attachment.size.width,
+                          height: attachment.size.height)
+        return rect.contains(aligned)
+    }
+
     private func showPageIndicatorTemporary() {
         showPageIndicator = true
         pageIndicatorWorkItem?.cancel()
@@ -396,26 +799,72 @@ struct NotebookPageView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: workItem)
     }
 
+    private func setCanvasInteraction(enabled: Bool, for controller: CanvasController) {
+        controller.canvasView.isUserInteractionEnabled = enabled
+    }
+
+    private func scrollToActivePage(animated: Bool = true) {
+        guard let proxy = scrollProxy,
+              let targetID = pageStore.activePageID else { return }
+        isProgrammaticJump = true
+        let scrollAction = {
+            proxy.scrollTo(targetID, anchor: .top)
+        }
+        if animated {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                scrollAction()
+            }
+        } else {
+            scrollAction()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            isProgrammaticJump = false
+        }
+    }
+
     private func distanceToCenter(for proxy: GeometryProxy, viewportHeight: CGFloat) -> CGFloat {
         let frame = proxy.frame(in: .named(scrollSpaceName))
         let scrollCenter = viewportHeight / 2
         return abs(frame.midY - scrollCenter)
     }
 
-    private func applyToolSettings(useEraser: Bool? = nil,
+    private func palette(for tool: CanvasDrawingTool) -> [UIColor] {
+        switch tool {
+        case .highlighter:
+            return Self.highlighterPalette
+        default:
+            return Self.penPalette
+        }
+    }
+
+    private func lastColor(for tool: CanvasDrawingTool) -> UIColor {
+        switch tool {
+        case .pen:
+            return penStrokeColor
+        case .highlighter:
+            return highlighterStrokeColor
+        case .eraser, .selection:
+            return penStrokeColor
+        }
+    }
+
+    private func storeColor(_ color: UIColor, for tool: CanvasDrawingTool) {
+        switch tool {
+        case .pen:
+            penStrokeColor = color
+        case .highlighter:
+            highlighterStrokeColor = color
+        case .eraser, .selection:
+            break
+        }
+    }
+
+    private func applyToolSettings(tool: CanvasDrawingTool? = nil,
                                    strokeColor: UIColor? = nil,
-                                   strokeWidth: CGFloat? = nil,
-                                   useHighlighter: Bool? = nil,
-                                   eraserMode: CanvasController.EraserMode? = nil) {
+                                   strokeWidth: CGFloat? = nil) {
         for controller in pageStore.pages {
-            if let eraser = useEraser {
-                controller.useEraser = eraser
-            }
-            if let highlighter = useHighlighter {
-                controller.useHighlighter = highlighter
-            }
-            if let eraserMode = eraserMode {
-                controller.setEraserMode(eraserMode)
+            if let tool {
+                controller.tool = tool
             }
             if let color = strokeColor {
                 controller.strokeColor = color
@@ -426,11 +875,14 @@ struct NotebookPageView: View {
         }
     }
 
-    private func applyCustomColorSelection() {
+    private func applyCustomColorSelection(for toolOverride: CanvasDrawingTool? = nil) {
         let color = UIColor(customColor)
         currentStrokeColor = color
-        isHighlighterActive = false
-        applyToolSettings(useEraser: false, strokeColor: color, useHighlighter: false)
+        let targetTool = toolOverride ?? displayedDrawingTool
+        currentTool = targetTool
+        lastDrawingTool = targetTool
+        storeColor(color, for: targetTool)
+        applyToolSettings(tool: targetTool, strokeColor: color)
     }
 
     private func updatePaletteSelection(for color: Color) {
@@ -453,108 +905,1124 @@ struct NotebookPageView: View {
                                   paperStyle: paperStyle,
                                   strokeColor: currentStrokeColor,
                                   strokeWidth: currentStrokeWidth,
-                                  useEraser: isUsingEraser)
-            applyToolSettings(eraserMode: eraserMode)
+                                  tool: currentTool)
             isLoadingNextPage = false
         }
     }
 
-    private func toggleHighlighter() {
-        isUsingEraser = false
-        isHighlighterActive.toggle()
-        if isHighlighterActive {
-            let highlightColor = UIColor.yellow.withAlphaComponent(0.35)
-            applyToolSettings(useEraser: false, strokeColor: highlightColor, useHighlighter: true)
-        } else {
-            applyToolSettings(useEraser: false, strokeColor: currentStrokeColor, useHighlighter: false)
+    private func pageScale(for availableWidth: CGFloat) -> CGFloat {
+        let horizontalPadding: CGFloat = 96
+        let usableWidth = max(availableWidth - horizontalPadding, basePageSize.width)
+        let scale = usableWidth / basePageSize.width
+        return min(max(scale, 1.0), 1.25)
+    }
+
+    private func presentImageOptions() {
+        pendingImagePageID = activePageController?.id ?? pageStore.pages.first?.id
+        showImageOptions = pendingImagePageID != nil
+    }
+
+    private func presentExportOptions() {
+        exportSelection = Set(pageStore.pageModels.map { $0.id })
+        exportFormat = .pdf
+        exportErrorMessage = nil
+        showExportSheet = true
+    }
+
+    private func presentPicker(for source: ImagePickerSource) {
+        guard source.isAvailable else { return }
+        if pendingImagePageID == nil {
+            pendingImagePageID = activePageController?.id ?? pageStore.pages.first?.id
+        }
+        guard pendingImagePageID != nil else {
+            cancelImageInsertion()
+            return
+        }
+        imagePickerSource = source
+        showImageOptions = false
+    }
+
+    private func handleImageSelection(_ image: UIImage) {
+        guard let pageID = pendingImagePageID ?? activePageController?.id ?? pageStore.pages.first?.id else {
+            cancelImageInsertion()
+            return
+        }
+        pendingImagePageID = nil
+        guard insertImage(image,
+                           on: pageID,
+                           pageSize: basePageSize,
+                           preferredCenter: nil) != nil else {
+            cancelImageInsertion()
+            return
+        }
+        imagePickerSource = nil
+    }
+
+    private func insertShape(_ kind: ShapeTemplate.Kind) {
+        guard let pageID = activePageController?.id ?? pageStore.pages.first?.id else { return }
+        let color = currentStrokeColor
+        let image = renderedShapeImage(for: kind, color: color)
+        if let newID = insertImage(image,
+                                   on: pageID,
+                                   pageSize: basePageSize,
+                                   preferredCenter: nil) {
+            shapeAttachmentKinds[newID] = kind
         }
     }
 
-    private func presentImagePicker() {
-        if imagePickerSource == .camera && !UIImagePickerController.isSourceTypeAvailable(.camera) {
-            imagePickerSource = .photoLibrary
+    private func pasteFromClipboard() {
+        guard pasteboardHasImage else { return }
+        guard let pageID = activePageController?.id ?? pageStore.pages.first?.id else { return }
+        guard let image = UIPasteboard.general.image else { return }
+        if let newID = insertImage(image,
+                                   on: pageID,
+                                   pageSize: basePageSize,
+                                   preferredCenter: nil) {
+            if let kindRaw = UIPasteboard.general.value(forPasteboardType: shapePasteboardType) as? String,
+               let kind = ShapeTemplate.Kind(rawValue: kindRaw) {
+                shapeAttachmentKinds[newID] = kind
+            }
         }
-        showImagePickerSheet = true
+        refreshPasteboardState()
     }
 
-    private func insertImage(_ image: UIImage) {
-        guard let controller = activePageController,
-              let data = image.jpegData(compressionQuality: 0.9) else { return }
+    private func refreshPasteboardState() {
+        pasteboardHasImage = UIPasteboard.general.hasImages
+    }
+
+    private func renderedShapeImage(for kind: ShapeTemplate.Kind, color: UIColor) -> UIImage {
+        let canvasSize = CGSize(width: 720, height: 720)
+        let inset: CGFloat = 140
+        let rect = CGRect(origin: .zero, size: canvasSize).insetBy(dx: inset, dy: inset)
+        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: UIGraphicsImageRendererFormat.default())
+        let strokeColor = color
+        let lineWidth: CGFloat = 10
+
+        return renderer.image { ctx in
+            ctx.cgContext.setFillColor(UIColor.clear.cgColor)
+            ctx.cgContext.setStrokeColor(strokeColor.cgColor)
+            ctx.cgContext.setLineWidth(lineWidth)
+            ctx.cgContext.setLineCap(.round)
+            ctx.cgContext.setLineJoin(.round)
+
+            switch kind {
+            case .rectangle:
+                let path = UIBezierPath(rect: rect)
+                strokeColor.setStroke()
+                path.lineWidth = lineWidth
+                path.stroke()
+            case .square:
+                let side = min(rect.width, rect.height)
+                let squareRect = CGRect(x: rect.midX - side / 2,
+                                        y: rect.midY - side / 2,
+                                        width: side,
+                                        height: side)
+                let path = UIBezierPath(rect: squareRect)
+                strokeColor.setStroke()
+                path.lineWidth = lineWidth
+                path.stroke()
+            case .roundedRectangle:
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: 90)
+                strokeColor.setStroke()
+                path.lineWidth = lineWidth
+                path.stroke()
+            case .circle:
+                let path = UIBezierPath(ovalIn: rect)
+                strokeColor.setStroke()
+                path.lineWidth = lineWidth
+                path.stroke()
+            case .triangle:
+                let path = UIBezierPath()
+                path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+                path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+                path.close()
+                strokeColor.setStroke()
+                path.lineWidth = lineWidth
+                path.stroke()
+            case .line:
+                ctx.cgContext.move(to: CGPoint(x: rect.minX, y: rect.midY))
+                ctx.cgContext.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+                ctx.cgContext.strokePath()
+            case .arrow:
+                let start = CGPoint(x: rect.minX, y: rect.midY)
+                let end = CGPoint(x: rect.maxX - 90, y: rect.midY)
+                ctx.cgContext.move(to: start)
+                ctx.cgContext.addLine(to: end)
+                ctx.cgContext.strokePath()
+
+                let head = UIBezierPath()
+                head.move(to: CGPoint(x: rect.maxX - 90, y: rect.midY - 60))
+                head.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+                head.addLine(to: CGPoint(x: rect.maxX - 90, y: rect.midY + 60))
+                strokeColor.setStroke()
+                head.lineWidth = lineWidth
+                head.stroke()
+            }
+        }
+    }
+
+    private func updateSelectedAttachmentColor(with color: UIColor) {
+        guard let context = editingAttachmentContext,
+              let kind = shapeAttachmentKinds[context.attachmentID] else { return }
+        let image = renderedShapeImage(for: kind, color: color)
+        guard let data = image.pngData() else { return }
+        guard let model = pageStore.images(for: context.pageID).first(where: { $0.id == context.attachmentID }) else { return }
+        pageStore.updateImageContent(pageID: context.pageID,
+                                     imageID: context.attachmentID,
+                                     imageData: data,
+                                     size: model.size)
+    }
+
+    private func defaultImageSize(for image: UIImage) -> CGSize {
+        let maxWidth = basePageSize.width * 0.65
+        let maxHeight = basePageSize.height * 0.65
+        let minWidth: CGFloat = 220
         let aspect = image.size.height / max(image.size.width, 1)
-        let targetWidth: CGFloat = 320
-        let size = CGSize(width: targetWidth, height: targetWidth * aspect)
-        let position = CodablePoint(CGPoint(x: defaultPageSize.width / 2, y: defaultPageSize.height / 2))
-        let attachment = PageImageAttachment(imageData: data,
-                                             position: position,
-                                             size: CodableSize(width: size.width, height: size.height),
-                                             rotation: 0)
-        controller.imageAttachments.append(attachment)
+
+        var width = max(minWidth, min(maxWidth, image.size.width))
+        var height = width * aspect
+
+        if height > maxHeight {
+            height = maxHeight
+            width = height / max(aspect, 0.01)
+        }
+
+        return CGSize(width: width, height: height)
     }
 
-    private func toggleRecording() {
-        if isRecording {
-            stopRecording()
-        } else {
-            startRecording()
+    private func canvasAttachments(for pageID: UUID) -> [CanvasAttachment] {
+        pageStore.images(for: pageID).compactMap { model in
+            CanvasAttachment(id: model.id,
+                             imageData: model.imageData,
+                             center: model.center,
+                             size: model.size,
+                             rotation: CGFloat(model.rotation),
+                             isLocked: model.isLocked)
         }
     }
 
-    private func startRecording() {
-        guard let pageID = pageStore.activePageID else { return }
-        AVAudioSession.sharedInstance().requestRecordPermission { granted in
-            guard granted else { return }
-            DispatchQueue.main.async {
-                do {
-                    let session = AVAudioSession.sharedInstance()
-                    try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-                    try session.setActive(true)
+    private func handleAttachmentUpdate(_ attachment: CanvasAttachment, for pageID: UUID) {
+        pageStore.updateImageTransform(pageID: pageID,
+                                       imageID: attachment.id,
+                                       center: attachment.center,
+                                       size: attachment.size,
+                                       rotation: Double(attachment.rotation))
+    }
 
-                    let url = DrawingPersistence.voiceNoteURL(notebookID: pageStore.notebookIdentifier,
-                                                              pageID: pageID,
-                                                              noteID: UUID())
-                    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                            withIntermediateDirectories: true)
-                    let settings: [String: Any] = [
-                        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                        AVSampleRateKey: 44100,
-                        AVNumberOfChannelsKey: 1,
-                        AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-                    ]
-                    let recorder = try AVAudioRecorder(url: url, settings: settings)
-                    recorder.prepareToRecord()
-                    recorder.record()
-                    self.audioRecorder = recorder
-                    self.isRecording = true
-                } catch {
-                    self.audioRecorder = nil
-                    self.isRecording = false
+    private func deleteAttachment(_ imageID: UUID, for pageID: UUID) {
+        pageStore.removeImage(pageID: pageID, imageID: imageID)
+        shapeAttachmentKinds.removeValue(forKey: imageID)
+        if editingAttachmentContext?.pageID == pageID,
+           editingAttachmentContext?.attachmentID == imageID {
+            editingAttachmentContext = nil
+        }
+    }
+
+    private func duplicateAttachment(_ attachment: CanvasAttachment,
+                                     for pageID: UUID,
+                                     pageSize: CGSize) {
+        let offset: CGFloat = 36
+        var newCenter = CGPoint(x: attachment.center.x + offset,
+                                y: attachment.center.y + offset)
+        newCenter = clampedCenter(newCenter, for: attachment.size, pageSize: pageSize)
+
+        let duplicate = NotebookPageImage(imageData: attachment.imageData,
+                                          center: newCenter,
+                                          size: attachment.size,
+                                          rotation: Double(attachment.rotation),
+                                          isLocked: attachment.isLocked)
+        pageStore.addImage(duplicate, to: pageID)
+        editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: duplicate.id)
+        if let kind = shapeAttachmentKinds[attachment.id] {
+            shapeAttachmentKinds[duplicate.id] = kind
+        }
+    }
+
+    private func copyAttachment(_ attachment: CanvasAttachment) {
+        guard let image = UIImage(data: attachment.imageData) else { return }
+        var item: [String: Any] = [:]
+        if let data = image.pngData() {
+            item[UTType.png.identifier] = data
+        }
+        if let kind = shapeAttachmentKinds[attachment.id] {
+            item[shapePasteboardType] = kind.rawValue
+        }
+        UIPasteboard.general.setItems([item], options: [:])
+        refreshPasteboardState()
+    }
+
+    private func startCropping(_ attachment: CanvasAttachment,
+                               for pageID: UUID,
+                               pageSize: CGSize) {
+        guard UIImage(data: attachment.imageData) != nil else { return }
+        croppingAttachmentContext = CroppingAttachmentContext(pageID: pageID,
+                                                             attachment: attachment,
+                                                             pageSize: pageSize)
+    }
+
+    private func handleCroppedImage(_ image: UIImage,
+                                    for context: CroppingAttachmentContext) {
+        guard let data = image.pngData() ?? image.jpegData(compressionQuality: 0.9) else { return }
+        let targetWidth = context.attachment.size.width
+        let newSize = resizedSize(for: image.size,
+                                  targetWidth: targetWidth,
+                                  pageSize: context.pageSize)
+        pageStore.updateImageContent(pageID: context.pageID,
+                                     imageID: context.attachment.id,
+                                     imageData: data,
+                                     size: newSize)
+    }
+
+    private func handleDroppedImage(_ image: UIImage, at location: CGPoint, pageSize: CGSize, pageID: UUID) {
+        _ = insertImage(image,
+                        on: pageID,
+                        pageSize: pageSize,
+                        preferredCenter: location)
+    }
+
+    @discardableResult
+    private func insertImage(_ image: UIImage,
+                             on pageID: UUID,
+                             pageSize: CGSize,
+                             preferredCenter: CGPoint?) -> UUID? {
+        guard let data = image.pngData() ?? image.jpegData(compressionQuality: 0.9) else {
+            return nil
+        }
+        let size = defaultImageSize(for: image)
+        let center: CGPoint
+        if let preferredCenter {
+            center = clampedCenter(preferredCenter, for: size, pageSize: pageSize)
+        } else {
+            center = CGPoint(x: pageSize.width / 2, y: pageSize.height / 2)
+        }
+        let attachment = NotebookPageImage(imageData: data,
+                                           center: center,
+                                           size: size,
+                                           rotation: 0,
+                                           isLocked: false)
+        pageStore.addImage(attachment, to: pageID)
+        editingAttachmentContext = EditingAttachmentContext(pageID: pageID, attachmentID: attachment.id)
+        return attachment.id
+    }
+
+    private func clampedCenter(_ center: CGPoint, for size: CGSize, pageSize: CGSize) -> CGPoint {
+        let halfWidth = size.width / 2
+        let halfHeight = size.height / 2
+        var adjusted = center
+        adjusted.x = max(halfWidth, min(pageSize.width - halfWidth, adjusted.x))
+        adjusted.y = max(halfHeight, min(pageSize.height - halfHeight, adjusted.y))
+        return adjusted
+    }
+
+    private func resizedSize(for imageSize: CGSize,
+                              targetWidth: CGFloat,
+                              pageSize: CGSize) -> CGSize {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return CGSize(width: targetWidth, height: targetWidth)
+        }
+
+        let minDimension: CGFloat = 120
+        let maxWidth = pageSize.width * 0.95
+        let maxHeight = pageSize.height * 0.95
+
+        var width = max(minDimension, min(targetWidth, maxWidth))
+        let aspect = imageSize.height / imageSize.width
+        var height = width * aspect
+
+        if height > maxHeight {
+            height = maxHeight
+            width = height / max(aspect, 0.01)
+        }
+
+        if height < minDimension {
+            height = minDimension
+            width = height / max(aspect, 0.01)
+        }
+
+        return CGSize(width: width, height: height)
+    }
+
+    /// Called when the overlay detects a background tap so the dragged image becomes fixed and PencilKit resumes drawing.
+    private func handleTapOutsideEditing(for pageID: UUID) {
+        guard editingAttachmentContext?.pageID == pageID else { return }
+        finalizeImageEditing()
+    }
+
+    /// Ends editing mode so the image becomes part of the page content and finger gestures return to scrolling/drawing.
+    private func finalizeImageEditing() {
+        editingAttachmentContext = nil
+    }
+
+    private func cancelImageInsertion() {
+        pendingImagePageID = nil
+        imagePickerSource = nil
+        showImageOptions = false
+    }
+
+    private func startExport() {
+        guard !isExportingSelection else { return }
+        let payloads = exportPayloads()
+        guard !payloads.isEmpty else {
+            exportErrorMessage = "Select at least one page."
+            return
+        }
+
+        let notebookTitle = notebook.title
+        isExportingSelection = true
+        exportErrorMessage = nil
+
+        Task {
+            do {
+                let urls = try await Task.detached(priority: .userInitiated) {
+                    try NotebookExportService.export(pages: payloads,
+                                                     format: exportFormat,
+                                                     notebookTitle: notebookTitle,
+                                                     pageSize: basePageSize)
+                }.value
+
+                await MainActor.run {
+                    shareURLs = urls
+                    isExportingSelection = false
+                    showExportSheet = false
+                    isPresentingShareSheet = true
+                }
+            } catch {
+                await MainActor.run {
+                    exportErrorMessage = error.localizedDescription
+                    isExportingSelection = false
                 }
             }
         }
     }
 
-    private func stopRecording() {
-        guard let recorder = audioRecorder, let controller = activePageController else { return }
-        recorder.stop()
-        recorder.prepareToPlay()
-        let duration = recorder.currentTime
-        let fileURL = recorder.url
-        audioRecorder = nil
-        isRecording = false
-
-        let note = VoiceNote(duration: duration, fileName: fileURL.lastPathComponent)
-        controller.voiceNotes.append(note)
+    private func cleanupShareFiles() {
+        for url in shareURLs {
+            try? FileManager.default.removeItem(at: url)
+        }
+        shareURLs.removeAll()
     }
 
-    private func playVoiceNote(_ note: VoiceNote) {
-        guard let url = DrawingPersistence.existingVoiceNoteURL(fileName: note.fileName,
-                                                                notebookID: pageStore.notebookIdentifier,
-                                                                pageID: pageStore.activePageID) else { return }
-        do {
-            audioPlayer = try AVAudioPlayer(contentsOf: url)
-            audioPlayer?.play()
-        } catch {
-            audioPlayer = nil
+    private func exportPayloads() -> [NotebookExportPagePayload] {
+        var payloads: [NotebookExportPagePayload] = []
+        for (index, page) in pageStore.pageModels.enumerated() {
+            guard exportSelection.contains(page.id),
+                  let controller = pageStore.controller(for: page.id) else {
+                continue
+            }
+            let drawing = controller.canvasView.drawing
+            let drawingData = DrawingPersistence.encode(drawing)
+            let attachments = pageStore.images(for: page.id)
+            let payload = NotebookExportPagePayload(id: page.id,
+                                                    title: page.title,
+                                                    pageNumber: index + 1,
+                                                    paperStyle: page.paperStyle,
+                                                    drawingData: drawingData,
+                                                    attachments: attachments)
+            payloads.append(payload)
+        }
+        return payloads
+    }
+
+    private func resetAIChat() {
+        aiMessages = AIChatMessage.seedConversation
+        AIChatPersistence.delete(for: notebookID)
+    }
+
+    private func pageLabel(for pageID: UUID?) -> String? {
+        guard let pageID else { return nil }
+        if let model = pageStore.model(for: pageID) {
+            let trimmed = model.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        if let index = pageStore.pages.firstIndex(where: { $0.id == pageID }) {
+            return "Page \(index + 1)"
+        }
+        return nil
+    }
+}
+
+extension NotebookPageView {
+    private func ensureInitialPageSelection() {
+        guard !didApplyInitialPage else { return }
+        didApplyInitialPage = true
+        guard !pageStore.pages.isEmpty else { return }
+        let targetIndex = max(0, min(notebook.currentPageIndex, pageStore.pages.count - 1))
+        guard pageStore.pages.indices.contains(targetIndex) else { return }
+        let controller = pageStore.pages[targetIndex]
+        DispatchQueue.main.async {
+            pageStore.activePageID = controller.id
+        }
+    }
+}
+
+private struct EditingAttachmentContext: Identifiable {
+    let pageID: UUID
+    let attachmentID: UUID
+
+    var id: UUID { attachmentID }
+}
+
+private struct CroppingAttachmentContext: Identifiable {
+    let pageID: UUID
+    let attachment: CanvasAttachment
+    let pageSize: CGSize
+
+    var id: UUID { attachment.id }
+}
+
+private struct AttachmentDropDelegate: DropDelegate {
+    let pageSize: CGSize
+    let onDrop: (CGPoint, UIImage) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [UTType.image])
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [UTType.image]).first else {
+            return false
+        }
+        let location = info.location
+        provider.loadObject(ofClass: UIImage.self) { object, _ in
+            guard let image = object as? UIImage else { return }
+            DispatchQueue.main.async {
+                onDrop(clampedLocation(location, pageSize: pageSize), image)
+            }
+        }
+        return true
+    }
+
+    private func clampedLocation(_ location: CGPoint, pageSize: CGSize) -> CGPoint {
+        var adjusted = location
+        adjusted.x = max(0, min(pageSize.width, adjusted.x))
+        adjusted.y = max(0, min(pageSize.height, adjusted.y))
+        return adjusted
+    }
+}
+
+private enum AIQueryMode: String, CaseIterable, Identifiable {
+    case text
+    case selection
+    case image
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .text: return "Text Prompt"
+        case .selection: return "Select Area"
+        case .image: return "Upload Image"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .text:
+            return "Describe what you need help with."
+        case .selection:
+            return "Highlight part of the page to ask about it."
+        case .image:
+            return "Share a reference photo or diagram."
+        }
+    }
+}
+
+struct AIChatMessage: Identifiable, Hashable, Codable {
+    enum Role: String, Codable {
+        case user, assistant
+    }
+
+    let id: UUID
+    var role: Role
+    var text: String
+    var timestamp: Date
+
+    init(id: UUID = UUID(), role: Role, text: String, timestamp: Date = .now) {
+        self.id = id
+        self.role = role
+        self.text = text
+        self.timestamp = timestamp
+    }
+
+    static var seedConversation: [AIChatMessage] {
+        [
+            AIChatMessage(role: .assistant,
+                          text: "Hi! I'm your notebook assistant. Ask anything about your notes or attach a reference image.")
+        ]
+    }
+}
+
+private struct AIChatSheet: View {
+    @Binding var messages: [AIChatMessage]
+    @Binding var queryMode: AIQueryMode
+    var onClose: () -> Void
+    var onNewChat: () -> Void
+
+    @State private var draftMessage: String = ""
+    @State private var isSending = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(spacing: 20) {
+            header
+
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("Query Mode", selection: $queryMode) {
+                    ForEach(AIQueryMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                if messages.count <= 1 {
+                    Text(queryMode.subtitle)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+
+                    modeAccessory
+                }
+            }
+
+            chatStream
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            inputField
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+    }
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Notebook AI")
+                    .font(.title2.weight(.bold))
+                Text("Ask questions about this page or attach context")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if messages.count > 1 {
+                Button(action: {
+                    draftMessage = ""
+                    errorMessage = nil
+                    onNewChat()
+                }) {
+                    Text("New Chat")
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.accentColor.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button(action: onClose) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var modeAccessory: some View {
+        switch queryMode {
+        case .text:
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.accentColor.opacity(0.08))
+                .overlay(
+                    HStack {
+                        Image(systemName: "pencil.and.outline")
+                            .foregroundColor(.accentColor)
+                        Text("Use natural language to describe ideas, questions, or todo items.")
+                            .font(.callout)
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+                    .padding()
+                )
+                .frame(maxWidth: .infinity)
+        case .selection:
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(style: StrokeStyle(lineWidth: 2, dash: [8]))
+                .foregroundColor(.accentColor)
+                .overlay(
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Coming soon: drag a box around strokes to ask about that region.", systemImage: "lasso.sparkles")
+                            .foregroundColor(.accentColor)
+                        Text("For now, describe the area you want feedback on in the text box below.")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                )
+        case .image:
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(.tertiarySystemFill))
+                .overlay(
+                    VStack(spacing: 10) {
+                        Image(systemName: "photo.badge.plus")
+                            .font(.title2)
+                            .foregroundColor(.accentColor)
+                        Text("Image uploads will be available soon. Mention the picture you want me to analyze in your prompt.")
+                            .multilineTextAlignment(.center)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                )
+        }
+    }
+
+    private var chatStream: some View {
+        Group {
+            if messages.count <= 1 {
+                VStack(spacing: 16) {
+                    Image(systemName: "text.magnifyingglass")
+                        .font(.system(size: 34))
+                        .foregroundColor(.accentColor.opacity(0.75))
+                    Text("Use natural language to describe ideas, questions, or TODOs.")
+                        .font(.callout)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+                .padding(40)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(messages) { message in
+                                AIChatBubble(message: message)
+                                    .id(message.id)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 16)
+                        .padding(.horizontal, 10)
+                    }
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onAppear {
+                        DispatchQueue.main.async {
+                            if let last = messages.last?.id {
+                                proxy.scrollTo(last, anchor: .bottom)
+                            }
+                        }
+                    }
+                    .onChange(of: messages) { _ in
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            if let last = messages.last?.id {
+                                proxy.scrollTo(last, anchor: .bottom)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var inputField: some View {
+        HStack(spacing: 12) {
+            TextField("Ask something...", text: $draftMessage, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...3)
+                .disabled(isSending)
+
+            Button(action: sendMessage) {
+                if isSending {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .padding(10)
+                        .background(Capsule().fill(Color.accentColor))
+                } else {
+                    Image(systemName: "paperplane.fill")
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Capsule().fill(draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.accentColor))
+                }
+            }
+            .disabled(draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
+        }
+    }
+
+    private func sendMessage() {
+        let trimmed = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        messages.append(AIChatMessage(role: .user, text: trimmed))
+        draftMessage = ""
+        errorMessage = nil
+        isSending = true
+
+        Task {
+            do {
+                let reply = try await OpenRouterChatService.send(messages: messages)
+                await MainActor.run {
+                    messages.append(AIChatMessage(role: .assistant, text: reply))
+                    isSending = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    isSending = false
+                }
+            }
+        }
+    }
+}
+
+private struct AIChatBubble: View {
+    let message: AIChatMessage
+
+    var body: some View {
+        HStack {
+            if message.role == .assistant {
+                bubble
+                Spacer(minLength: 40)
+            } else {
+                Spacer(minLength: 40)
+                bubble
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var bubble: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(message.text)
+                .font(.body)
+                .foregroundColor(message.role == .assistant ? .primary : .white)
+            Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(message.role == .assistant ? Color(.secondarySystemBackground) : Color.accentColor)
+        )
+    }
+}
+
+/// Stylized marker glyph used for the highlighter toggle.
+private struct HighlighterIcon: View {
+    var isActive: Bool
+
+    private var baseColor: Color {
+        isActive ? Color.primary : Color.primary.opacity(0.7)
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(baseColor)
+                .frame(width: 28, height: 12)
+                .offset(y: -4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.primary.opacity(0.25), lineWidth: 1)
+                        .offset(y: -4)
+                )
+
+            MarkerNibShape()
+                .fill(baseColor)
+                .frame(width: 28, height: 14)
+                .shadow(color: Color.primary.opacity(0.15), radius: 2, x: 0, y: 1)
+
+            Capsule()
+                .fill(Color.white.opacity(isActive ? 0.35 : 0.18))
+                .frame(width: 16, height: 4)
+                .offset(x: -4, y: -10)
+
+            Capsule()
+                .fill(Color.white.opacity(isActive ? 0.4 : 0.2))
+                .frame(width: 10, height: 3)
+                .offset(x: 5, y: -12)
+        }
+        .frame(width: 30, height: 26)
+        .rotationEffect(.degrees(-6))
+    }
+}
+
+private struct MarkerNibShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let inset = rect.width * 0.18
+        return Path { path in
+            path.move(to: CGPoint(x: rect.minX + inset, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + inset, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
+            path.closeSubpath()
+        }
+    }
+}
+
+/// Shiny "AI" badge used on the toolbar.
+private struct AISparkleGlyph: View {
+    var body: some View {
+        Text("AI")
+            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.black.opacity(0.95))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                    .shadow(color: Color.accentColor.opacity(0.6), radius: 4)
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.accentColor.opacity(0.7), .clear, Color.accentColor.opacity(0.7)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing),
+                            lineWidth: 3)
+                    .blur(radius: 1.2)
+                    .opacity(0.6)
+            )
+            .shadow(color: Color.accentColor.opacity(0.45), radius: 6, x: 0, y: 2)
+    }
+}
+
+private struct ImageInsertOptionsSheet: View {
+    let canUseCamera: Bool
+    let onSelect: (ImagePickerSource) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                Text("Insert Image")
+                    .font(.title3.weight(.semibold))
+
+                VStack(spacing: 16) {
+                    Button {
+                        onSelect(.photoLibrary)
+                    } label: {
+                        HStack {
+                            Label("Choose from Photos", systemImage: "photo")
+                            Spacer()
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color(.secondarySystemBackground)))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        onSelect(.camera)
+                    } label: {
+                        HStack {
+                            Label("Take Photo", systemImage: "camera")
+                            Spacer()
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(canUseCamera ? Color(.secondarySystemBackground) : Color(.systemGray5)))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canUseCamera)
+                }
+
+                Button("Cancel", role: .cancel) {
+                    onCancel()
+                }
+                .padding(.top, 8)
+            }
+            .padding(24)
+            .navigationBarHidden(true)
+        }
+    }
+}
+
+private struct PageExportSheet: View {
+    let pages: [NotebookPageModel]
+    @Binding var selectedPageIDs: Set<UUID>
+    @Binding var format: NotebookExportFormat
+    let isExporting: Bool
+    let errorMessage: String?
+    let onSelectAll: () -> Void
+    let onClearSelection: () -> Void
+    let onExport: () -> Void
+
+    private var selectedCount: Int { selectedPageIDs.count }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                Picker("Format", selection: $format) {
+                    ForEach(NotebookExportFormat.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(format.description)
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack {
+                    Button("Select All", action: onSelectAll)
+                    Spacer()
+                    Button("Clear", action: onClearSelection)
+                        .disabled(selectedPageIDs.isEmpty)
+                }
+
+                HStack {
+                    Text("\(selectedCount) selected")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
+                            exportRow(for: page, index: index)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Button(action: onExport) {
+                    Label(isExporting ? "Preparing…" : "Export & Share",
+                          systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isExporting || selectedPageIDs.isEmpty)
+
+                if isExporting {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                }
+            }
+            .padding()
+            .navigationTitle("Export Pages")
+        }
+    }
+
+    private func exportRow(for page: NotebookPageModel, index: Int) -> some View {
+        let isSelected = selectedPageIDs.contains(page.id)
+        return Button(action: {
+            toggle(page.id)
+        }) {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundColor(isSelected ? .accentColor : .secondary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(page.title.isEmpty ? "Page \(index + 1)" : page.title)
+                        .font(.headline)
+                    Text("Page \(index + 1)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .opacity(0.5)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color.clear,
+                                    lineWidth: 2)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(isSelected ? "Deselect" : "Select") {
+                toggle(page.id)
+            }
+        }
+    }
+
+    private func toggle(_ id: UUID) {
+        if selectedPageIDs.contains(id) {
+            selectedPageIDs.remove(id)
+        } else {
+            selectedPageIDs.insert(id)
+        }
+    }
+}
+
+private struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private enum ImagePickerSource: String, CaseIterable, Identifiable {
+    case photoLibrary
+    case camera
+
+    var id: String { rawValue }
+
+    var uiKitSource: UIImagePickerController.SourceType {
+        switch self {
+        case .photoLibrary:
+            return .photoLibrary
+        case .camera:
+            return .camera
+        }
+    }
+
+    var isAvailable: Bool {
+        switch self {
+        case .photoLibrary:
+            return UIImagePickerController.isSourceTypeAvailable(.photoLibrary)
+        case .camera:
+            return UIImagePickerController.isSourceTypeAvailable(.camera)
         }
     }
 }
@@ -572,7 +2040,7 @@ private struct CustomColorPopover: View {
                 .frame(width: 280, height: 280)
 
             HStack(spacing: 6) {
-                ForEach(Array(suggestions.enumerated()), id: \.offset) { _, color in
+                ForEach(Array(suggestions.enumerated()), id: \.offset) { (_, color) in
                     Button(action: {
                         onSelectSuggestion(color)
                     }) {
@@ -596,6 +2064,64 @@ private struct CustomColorPopover: View {
         .padding(16)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .frame(width: 300)
+    }
+}
+
+private struct NotebookCoverPage: View {
+    @Binding var notebook: Notebook
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 40, style: .continuous)
+                .fill(LinearGradient(colors: [notebook.coverColor.opacity(0.98),
+                                              notebook.coverColor.opacity(0.7)],
+                                     startPoint: .topLeading,
+                                     endPoint: .bottomTrailing))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 40, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1.5)
+                )
+
+            RoundedRectangle(cornerRadius: 38, style: .continuous)
+                .fill(
+                    LinearGradient(colors: [Color.white.opacity(0.2), Color.clear],
+                                   startPoint: .topLeading,
+                                   endPoint: .bottomTrailing)
+                )
+                .blur(radius: 1.5)
+                .padding(4)
+
+            VStack(alignment: .leading, spacing: 30) {
+                Text(notebook.title)
+                    .font(.system(size: 46, weight: .heavy, design: .rounded))
+                    .foregroundColor(.white)
+                    .shadow(color: Color.black.opacity(0.15), radius: 4, x: 0, y: 3)
+
+                Capsule()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(height: 2)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Pages \(notebook.pages.count)", systemImage: "doc.on.doc")
+                    Label(Date.now.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
+                }
+                .foregroundColor(.white.opacity(0.85))
+                .font(.subheadline.weight(.medium))
+
+                Spacer()
+
+                HStack {
+                    Spacer()
+                    Image(systemName: "bookmark.fill")
+                        .font(.title2)
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(16)
+                        .background(Color.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
+                }
+            }
+            .padding(44)
+        }
     }
 }
 
@@ -768,78 +2294,127 @@ struct ToolbarButtonStyle: ButtonStyle {
 struct NotebookPageView_Previews: PreviewProvider {
     static var previews: some View {
         NotebookPageView(pageStore: NotebookPageStore(notebookID: UUID(),
-                                                      pageModels: [NotebookPageModel(title: "Page 1")]))
+                                                      pageModels: [NotebookPageModel(title: "Page 1")]),
+                         notebook: .constant(Notebook(title: "Preview",
+                                                       coverColor: Color(red: 0.3, green: 0.5, blue: 0.8))),
+                         voiceRecorder: VoiceRecorderManager(notebookID: UUID()))
             .previewInterfaceOrientation(.landscapeLeft)
             .previewDevice("iPad (10th generation)")
     }
 }
 
-struct ImagePicker: UIViewControllerRepresentable {
-    var sourceType: UIImagePickerController.SourceType
-    var completion: (UIImage?) -> Void
+struct CroppingImagePicker: UIViewControllerRepresentable {
+    let sourceType: UIImagePickerController.SourceType
+    let onSelection: (UIImage) -> Void
+    let onCancel: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(completion: completion)
+        Coordinator(parent: self)
     }
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.sourceType = sourceType
-        picker.delegate = context.coordinator
         picker.allowsEditing = false
+        picker.delegate = context.coordinator
+        picker.modalPresentationStyle = .fullScreen
         return picker
     }
 
     func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
 
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let completion: (UIImage?) -> Void
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let parent: CroppingImagePicker
 
-        init(completion: @escaping (UIImage?) -> Void) {
-            self.completion = completion
+        init(parent: CroppingImagePicker) {
+            self.parent = parent
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            completion(nil)
+            picker.dismiss(animated: true) {
+                self.parent.onCancel()
+            }
         }
 
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            let image = (info[.editedImage] ?? info[.originalImage]) as? UIImage
-            completion(image)
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            let edited = info[.editedImage] as? UIImage
+            let original = info[.originalImage] as? UIImage
+            picker.dismiss(animated: true) {
+                if let image = edited ?? original {
+                    self.parent.onSelection(image)
+                } else {
+                    self.parent.onCancel()
+                }
+            }
         }
     }
 }
 
-struct VoiceNotesList: View {
-    var notes: [VoiceNote]
-    var onClose: () -> Void
-    var onPlay: (VoiceNote) -> Void
+struct ShapeTemplate: Identifiable {
+    enum Kind: String, CaseIterable, Identifiable {
+        case rectangle
+        case roundedRectangle
+        case square
+        case circle
+        case triangle
+        case line
+        case arrow
 
-    private let formatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
+        var id: String { rawValue }
+    }
+
+    let id = UUID()
+    let name: String
+    let symbolName: String
+    let kind: Kind
+
+    static let catalog: [ShapeTemplate] = [
+        ShapeTemplate(name: "Rectangle", symbolName: "rectangle", kind: .rectangle),
+        ShapeTemplate(name: "Square", symbolName: "square", kind: .square),
+        ShapeTemplate(name: "Rounded", symbolName: "app", kind: .roundedRectangle),
+        ShapeTemplate(name: "Circle", symbolName: "circle", kind: .circle),
+        ShapeTemplate(name: "Triangle", symbolName: "triangle", kind: .triangle),
+        ShapeTemplate(name: "Line", symbolName: "minus", kind: .line),
+        ShapeTemplate(name: "Arrow", symbolName: "arrow.right", kind: .arrow)
+    ]
+}
+
+struct ShapePickerSheet: View {
+    let onSelect: (ShapeTemplate.Kind) -> Void
+    let onClose: () -> Void
+
+    private let columns: [GridItem] = [
+        GridItem(.adaptive(minimum: 72), spacing: 12)
+    ]
 
     var body: some View {
         NavigationStack {
-            List(notes) { note in
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(formatter.string(from: note.createdAt))
-                            .font(.subheadline)
-                        Text(String(format: "%.1f sec", note.duration))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(ShapeTemplate.catalog) { template in
+                            Button {
+                                onSelect(template.kind)
+                            } label: {
+                                Image(systemName: template.symbolName)
+                                    .font(.system(size: 26, weight: .semibold))
+                                    .frame(width: 56, height: 56)
+                                    .foregroundStyle(Color.accentColor)
+                                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    Spacer()
-                    Button(action: { onPlay(note) }) {
-                        Image(systemName: "play.circle")
-                    }
+
+                    Text("GIF stickers coming soon.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding()
             }
-            .navigationTitle("Voice Notes")
+            .navigationTitle("Shapes")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close", action: onClose)

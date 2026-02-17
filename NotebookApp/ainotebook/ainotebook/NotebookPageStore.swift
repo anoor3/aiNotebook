@@ -1,38 +1,71 @@
 import SwiftUI
+import PencilKit
 import UIKit
-import Combine
 
 final class NotebookPageStore: ObservableObject {
     @Published var pages: [CanvasController]
     @Published var activePageID: UUID?
     @Published private(set) var pageModels: [NotebookPageModel]
+    @Published var pageImages: [UUID: [NotebookPageImage]]
 
     private let notebookID: UUID
     private let autosaveInterval: TimeInterval = 0.8
     private var autosaveWorkItems: [UUID: DispatchWorkItem] = [:]
     private let autosaveQueue = DispatchQueue(label: "NotebookPageStore.autosave")
     private let onModelsUpdated: (([NotebookPageModel]) -> Void)?
-    private var controllerCancellables: [UUID: AnyCancellable] = [:]
 
     init(notebookID: UUID, pageModels: [NotebookPageModel], onModelsUpdated: (([NotebookPageModel]) -> Void)? = nil) {
         self.notebookID = notebookID
-        self.pageModels = pageModels.isEmpty ? [NotebookPageModel(title: "Page 1")] : pageModels
         self.onModelsUpdated = onModelsUpdated
 
-        self.pages = self.pageModels.map { model in
-            let controller = CanvasController(id: model.id)
-            configure(controller: controller, with: model)
-            return controller
+        let normalizedModels = pageModels.isEmpty ? [NotebookPageModel(title: "Page 1")] : pageModels
+        var hydratedImages: [UUID: [NotebookPageImage]] = [:]
+        var migrationRequired = false
+        var sanitizedModels = normalizedModels
+
+        for modelIndex in sanitizedModels.indices {
+            var images = sanitizedModels[modelIndex].images
+            for i in images.indices {
+                if !images[i].imageData.isEmpty {
+                    // Migrate: Save to disk and clear from model
+                    ImagePersistence.save(images[i].imageData, notebookID: notebookID, imageID: images[i].id)
+                    migrationRequired = true
+                } else {
+                    // Load from disk
+                    if let data = ImagePersistence.load(notebookID: notebookID, imageID: images[i].id) {
+                        images[i].imageData = data
+                    }
+                }
+            }
+            hydratedImages[sanitizedModels[modelIndex].id] = images
+            
+            // Clear data from the models that will be saved back to notebooks.json
+            for i in sanitizedModels[modelIndex].images.indices {
+                sanitizedModels[modelIndex].images[i].imageData = Data()
+                sanitizedModels[modelIndex].drawingData = nil
+            }
         }
-        self.activePageID = pages.first?.id
+        
+        self.pageModels = sanitizedModels
+        self.pageImages = hydratedImages
+
+        let controllers = normalizedModels.map { model in
+            CanvasController(id: model.id)
+        }
+        self.pages = controllers
+        self.activePageID = controllers.first?.id
+
+        for (controller, model) in zip(controllers, normalizedModels) {
+            configure(controller: controller, with: model)
+        }
+
+        if migrationRequired {
+            notifyModelUpdate()
+        }
     }
 
     convenience init(notebook: Notebook, onModelsUpdated: (([NotebookPageModel]) -> Void)? = nil) {
         self.init(notebookID: notebook.id, pageModels: notebook.pages, onModelsUpdated: onModelsUpdated)
-    }
-
-    var notebookIdentifier: UUID {
-        notebookID
     }
 
     func controller(for id: UUID?) -> CanvasController? {
@@ -50,13 +83,13 @@ final class NotebookPageStore: ObservableObject {
                  paperStyle: PaperStyle? = nil,
                  strokeColor: UIColor? = nil,
                  strokeWidth: CGFloat? = nil,
-                 useEraser: Bool = false) -> CanvasController {
+                 tool: CanvasDrawingTool = .pen) -> CanvasController {
         let newModel = NotebookPageModel(title: title ?? "Page \(pageModels.count + 1)",
                                          paperStyle: paperStyle ?? pageModels.last?.paperStyle ?? .grid)
         let controller = CanvasController(id: newModel.id,
                                           strokeColor: strokeColor ?? pages.last?.strokeColor ?? UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0),
                                           strokeWidth: strokeWidth ?? pages.last?.strokeWidth ?? 3.2,
-                                          useEraser: useEraser)
+                                          tool: tool)
         configure(controller: controller, with: newModel)
 
         if let index,
@@ -68,6 +101,7 @@ final class NotebookPageStore: ObservableObject {
             pageModels.append(newModel)
             pages.append(controller)
         }
+        pageImages[newModel.id] = newModel.images
 
         activePageID = controller.id
         notifyModelUpdate()
@@ -76,52 +110,118 @@ final class NotebookPageStore: ObservableObject {
 
     private func configure(controller: CanvasController, with model: NotebookPageModel) {
         if let saved = DrawingPersistence.load(notebookID: notebookID, pageID: model.id) ??
-            (model.drawingData.flatMap { DrawingPersistence.decodeOrMigrate($0) }) {
+            (model.drawingData.flatMap { DrawingPersistence.decode(from: $0) }) {
             controller.setDrawing(saved)
             updateModel(for: model.id, drawingData: DrawingPersistence.encode(saved))
         }
 
-        controller.setImageAttachments(model.imageAttachments)
-        controller.setVoiceNotes(model.voiceNotes)
-
         controller.onDrawingChanged = { [weak self] drawing in
             self?.handleDrawingChange(drawing, for: model.id)
         }
-
-        controller.onImageAttachmentsChanged = { [weak self] attachments in
-            self?.handleImageChange(attachments, for: model.id)
-        }
-
-        controller.onVoiceNotesChanged = { [weak self] notes in
-            self?.handleVoiceNotesChange(notes, for: model.id)
-        }
-
-        controllerCancellables[controller.id] = controller.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }
     }
 
-    private func handleDrawingChange(_ drawing: InkDrawing, for pageID: UUID) {
+    private func handleDrawingChange(_ drawing: PKDrawing, for pageID: UUID) {
         let data = DrawingPersistence.encode(drawing)
         updateModel(for: pageID, drawingData: data)
         scheduleAutosave(drawing, for: pageID)
     }
 
-    private func handleImageChange(_ attachments: [PageImageAttachment], for pageID: UUID) {
-        guard let index = pageModels.firstIndex(where: { $0.id == pageID }) else { return }
-        pageModels[index].imageAttachments = attachments
-        notifyModelUpdate()
-    }
-
-    private func handleVoiceNotesChange(_ notes: [VoiceNote], for pageID: UUID) {
-        guard let index = pageModels.firstIndex(where: { $0.id == pageID }) else { return }
-        pageModels[index].voiceNotes = notes
-        notifyModelUpdate()
-    }
-
     private func updateModel(for pageID: UUID, drawingData: Data) {
-        guard let index = pageModels.firstIndex(where: { $0.id == pageID }) else { return }
-        pageModels[index].drawingData = drawingData
+        notifyModelUpdate()
+    }
+
+    func images(for pageID: UUID) -> [NotebookPageImage] {
+        pageImages[pageID] ?? []
+    }
+
+    func addImage(_ image: NotebookPageImage, to pageID: UUID) {
+        ImagePersistence.save(image.imageData, notebookID: notebookID, imageID: image.id)
+        var images = pageImages[pageID] ?? []
+        images.append(image)
+        setImages(images, for: pageID)
+    }
+
+    func insertPages(_ models: [NotebookPageModel], at index: Int) {
+        guard !models.isEmpty else { return }
+        var insertionIndex = max(0, min(index, pages.count))
+        for model in models {
+            let controller = CanvasController(id: model.id)
+            configure(controller: controller, with: model)
+            pageModels.insert(model, at: insertionIndex)
+            pages.insert(controller, at: insertionIndex)
+            pageImages[model.id] = model.images
+            insertionIndex += 1
+        }
+        activePageID = models.last?.id
+        notifyModelUpdate()
+    }
+
+    func deletePage(withID pageID: UUID) {
+        guard pageModels.count > 1,
+              let modelIndex = pageModels.firstIndex(where: { $0.id == pageID }),
+              let pageIndex = pages.firstIndex(where: { $0.id == pageID }) else { return }
+
+        autosaveWorkItems[pageID]?.cancel()
+        autosaveWorkItems.removeValue(forKey: pageID)
+
+        pageModels.remove(at: modelIndex)
+        pages.remove(at: pageIndex)
+        pageImages[pageID] = nil
+
+        DrawingPersistence.deletePage(notebookID: notebookID, pageID: pageID)
+
+        if activePageID == pageID {
+            if pageIndex < pages.count {
+                activePageID = pages[pageIndex].id
+            } else {
+                activePageID = pages.last?.id
+            }
+        }
+
+        retitlePages()
+    }
+
+    func updateImageTransform(pageID: UUID,
+                              imageID: UUID,
+                              center: CGPoint,
+                              size: CGSize,
+                              rotation: Double) {
+        guard var images = pageImages[pageID],
+              let index = images.firstIndex(where: { $0.id == imageID }) else { return }
+        images[index].center = center
+        images[index].size = size
+        images[index].rotation = rotation
+        setImages(images, for: pageID)
+    }
+
+    func updateImageContent(pageID: UUID,
+                            imageID: UUID,
+                            imageData: Data,
+                            size: CGSize) {
+        ImagePersistence.save(imageData, notebookID: notebookID, imageID: imageID)
+        guard var images = pageImages[pageID],
+              let index = images.firstIndex(where: { $0.id == imageID }) else { return }
+        images[index].imageData = imageData
+        images[index].size = size
+        setImages(images, for: pageID)
+    }
+
+    func removeImage(pageID: UUID, imageID: UUID) {
+        guard var images = pageImages[pageID] else { return }
+        images.removeAll { $0.id == imageID }
+        setImages(images, for: pageID)
+    }
+
+    func setImages(_ images: [NotebookPageImage], for pageID: UUID) {
+        pageImages[pageID] = images
+        if let index = pageModels.firstIndex(where: { $0.id == pageID }) {
+            // Keep the metadata in the model, but clear the massive data field for JSON persistence
+            var sanitizedImages = images
+            for i in sanitizedImages.indices {
+                sanitizedImages[i].imageData = Data()
+            }
+            pageModels[index].images = sanitizedImages
+        }
         notifyModelUpdate()
     }
 
@@ -136,7 +236,7 @@ final class NotebookPageStore: ObservableObject {
         onModelsUpdated?(pageModels)
     }
 
-    private func scheduleAutosave(_ drawing: InkDrawing, for pageID: UUID) {
+    private func scheduleAutosave(_ drawing: PKDrawing, for pageID: UUID) {
         autosaveWorkItems[pageID]?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in

@@ -8,27 +8,24 @@ struct NotebookPageModel: Identifiable, Hashable, Codable {
     var created: Date
     var paperStyle: PaperStyle
     var drawingData: Data?
-    var imageAttachments: [PageImageAttachment]
-    var voiceNotes: [VoiceNote]
+    var images: [NotebookPageImage]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, created, paperStyle, drawingData, images
+    }
 
     init(id: UUID = UUID(),
          title: String,
          created: Date = Date(),
          paperStyle: PaperStyle = .grid,
          drawingData: Data? = nil,
-         imageAttachments: [PageImageAttachment] = [],
-         voiceNotes: [VoiceNote] = []) {
+         images: [NotebookPageImage] = []) {
         self.id = id
         self.title = title
         self.created = created
         self.paperStyle = paperStyle
         self.drawingData = drawingData
-        self.imageAttachments = imageAttachments
-        self.voiceNotes = voiceNotes
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id, title, created, paperStyle, drawingData, imageAttachments, voiceNotes
+        self.images = images
     }
 
     init(from decoder: Decoder) throws {
@@ -38,8 +35,64 @@ struct NotebookPageModel: Identifiable, Hashable, Codable {
         created = try container.decodeIfPresent(Date.self, forKey: .created) ?? Date()
         paperStyle = try container.decodeIfPresent(PaperStyle.self, forKey: .paperStyle) ?? .grid
         drawingData = try container.decodeIfPresent(Data.self, forKey: .drawingData)
-        imageAttachments = try container.decodeIfPresent([PageImageAttachment].self, forKey: .imageAttachments) ?? []
-        voiceNotes = try container.decodeIfPresent([VoiceNote].self, forKey: .voiceNotes) ?? []
+        images = try container.decodeIfPresent([NotebookPageImage].self, forKey: .images) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(created, forKey: .created)
+        try container.encode(paperStyle, forKey: .paperStyle)
+        try container.encodeIfPresent(drawingData, forKey: .drawingData)
+        try container.encode(images, forKey: .images)
+    }
+}
+
+struct NotebookPageImage: Identifiable, Hashable, Codable {
+    let id: UUID
+    var imageData: Data
+    var center: CGPoint
+    var size: CGSize
+    var rotation: Double
+    var isLocked: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id, imageData, center, size, rotation, isLocked
+    }
+
+    init(id: UUID = UUID(),
+         imageData: Data,
+         center: CGPoint,
+         size: CGSize,
+         rotation: Double = 0,
+         isLocked: Bool = false) {
+        self.id = id
+        self.imageData = imageData
+        self.center = center
+        self.size = size
+        self.rotation = rotation
+        self.isLocked = isLocked
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        imageData = try container.decode(Data.self, forKey: .imageData)
+        center = try container.decode(CGPoint.self, forKey: .center)
+        size = try container.decode(CGSize.self, forKey: .size)
+        rotation = try container.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
+        isLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(imageData, forKey: .imageData)
+        try container.encode(center, forKey: .center)
+        try container.encode(size, forKey: .size)
+        try container.encode(rotation, forKey: .rotation)
+        try container.encode(isLocked, forKey: .isLocked)
     }
 }
 
@@ -52,30 +105,56 @@ enum PaperStyle: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
 }
 
+enum PaperColor: String, CaseIterable, Identifiable, Codable {
+    case classic = "Classic Ivory"
+    case white = "Bright White"
+
+    var id: String { rawValue }
+
+    var uiColor: UIColor {
+        switch self {
+        case .classic:
+            return UIColor(red: 252/255, green: 244/255, blue: 220/255, alpha: 1.0)
+        case .white:
+            return UIColor(white: 1.0, alpha: 1.0)
+        }
+    }
+
+    var swiftUIColor: Color {
+        Color(uiColor: uiColor)
+    }
+}
+
 struct Notebook: Identifiable, Hashable, Codable {
     let id: UUID
     var title: String
     var coverColor: Color
     var paperStyle: PaperStyle
+    var paperColor: PaperColor
     var lastOpened: Date
     var isFavorite: Bool
     var pages: [NotebookPageModel]
     var currentPageIndex: Int
+    var isTrashed: Bool
 
     init(id: UUID = UUID(),
          title: String,
          coverColor: Color,
          paperStyle: PaperStyle = .grid,
+         paperColor: PaperColor = .classic,
          lastOpened: Date = Date(),
          isFavorite: Bool = false,
          pages: [NotebookPageModel] = [NotebookPageModel(title: "Page 1")],
-         currentPageIndex: Int = 0) {
+         currentPageIndex: Int = 0,
+         isTrashed: Bool = false) {
         self.id = id
         self.title = title
         self.coverColor = coverColor
         self.paperStyle = paperStyle
+        self.paperColor = paperColor
         self.lastOpened = lastOpened
         self.isFavorite = isFavorite
+        self.isTrashed = isTrashed
 
         let normalizedPages: [NotebookPageModel]
         if pages.isEmpty {
@@ -87,8 +166,7 @@ struct Notebook: Identifiable, Hashable, Codable {
                                   created: page.created,
                                   paperStyle: paperStyle,
                                   drawingData: page.drawingData,
-                                  imageAttachments: page.imageAttachments,
-                                  voiceNotes: page.voiceNotes)
+                                  images: page.images)
             }
         }
 
@@ -97,14 +175,13 @@ struct Notebook: Identifiable, Hashable, Codable {
     }
 
     static var sampleData: [Notebook] {
-        [
-            Notebook(title: "Product Design", coverColor: Color(red: 0.16, green: 0.3, blue: 0.58)),
-            Notebook(title: "Meeting Notes", coverColor: Color(red: 0.85, green: 0.52, blue: 0.26), paperStyle: .lined),
-            Notebook(title: "Sketchbook", coverColor: Color(red: 0.28, green: 0.68, blue: 0.38), paperStyle: .blank)
-        ]
+        [Notebook(title: "My Notebook",
+                  coverColor: Color(red: 0.16, green: 0.3, blue: 0.58),
+                  paperStyle: .grid,
+                  paperColor: .classic)]
     }
     private enum CodingKeys: String, CodingKey {
-        case id, title, coverColor, paperStyle, lastOpened, isFavorite, pages, currentPageIndex
+        case id, title, coverColor, paperStyle, paperColor, lastOpened, isFavorite, pages, currentPageIndex, isTrashed
     }
 
     init(from decoder: Decoder) throws {
@@ -114,12 +191,14 @@ struct Notebook: Identifiable, Hashable, Codable {
         let codableColor = try container.decode(CodableColor.self, forKey: .coverColor)
         coverColor = codableColor.color
         paperStyle = try container.decode(PaperStyle.self, forKey: .paperStyle)
+        paperColor = try container.decodeIfPresent(PaperColor.self, forKey: .paperColor) ?? .classic
         lastOpened = try container.decode(Date.self, forKey: .lastOpened)
         isFavorite = try container.decode(Bool.self, forKey: .isFavorite)
         let decodedPages = try container.decodeIfPresent([NotebookPageModel].self, forKey: .pages) ?? []
         pages = Notebook.normalizePages(decodedPages, paperStyle: paperStyle)
         currentPageIndex = min(try container.decodeIfPresent(Int.self, forKey: .currentPageIndex) ?? 0,
                                max(pages.count - 1, 0))
+        isTrashed = try container.decodeIfPresent(Bool.self, forKey: .isTrashed) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -128,10 +207,12 @@ struct Notebook: Identifiable, Hashable, Codable {
         try container.encode(title, forKey: .title)
         try container.encode(CodableColor(coverColor), forKey: .coverColor)
         try container.encode(paperStyle, forKey: .paperStyle)
+        try container.encode(paperColor, forKey: .paperColor)
         try container.encode(lastOpened, forKey: .lastOpened)
         try container.encode(isFavorite, forKey: .isFavorite)
         try container.encode(pages, forKey: .pages)
         try container.encode(currentPageIndex, forKey: .currentPageIndex)
+        try container.encode(isTrashed, forKey: .isTrashed)
     }
 }
 
@@ -146,8 +227,7 @@ private extension Notebook {
                               created: page.created,
                               paperStyle: paperStyle,
                               drawingData: page.drawingData,
-                              imageAttachments: page.imageAttachments,
-                              voiceNotes: page.voiceNotes)
+                              images: page.images)
         }
     }
 }
@@ -173,53 +253,5 @@ struct CodableColor: Codable, Hashable {
 
     var color: Color {
         Color(red: red, green: green, blue: blue, opacity: alpha)
-    }
-}
-
-struct PageImageAttachment: Identifiable, Hashable, Codable {
-    var id: UUID
-    var imageData: Data
-    var position: CodablePoint
-    var size: CodableSize
-    var rotation: Double
-
-    init(id: UUID = UUID(),
-         imageData: Data,
-         position: CodablePoint,
-         size: CodableSize,
-         rotation: Double = 0) {
-        self.id = id
-        self.imageData = imageData
-        self.position = position
-        self.size = size
-        self.rotation = rotation
-    }
-}
-
-struct CodableSize: Codable, Hashable {
-    var width: CGFloat
-    var height: CGFloat
-
-    init(width: CGFloat, height: CGFloat) {
-        self.width = width
-        self.height = height
-    }
-
-    var size: CGSize {
-        CGSize(width: width, height: height)
-    }
-}
-
-struct VoiceNote: Identifiable, Hashable, Codable {
-    var id: UUID
-    var createdAt: Date
-    var duration: TimeInterval
-    var fileName: String
-
-    init(id: UUID = UUID(), createdAt: Date = Date(), duration: TimeInterval, fileName: String) {
-        self.id = id
-        self.createdAt = createdAt
-        self.duration = duration
-        self.fileName = fileName
     }
 }

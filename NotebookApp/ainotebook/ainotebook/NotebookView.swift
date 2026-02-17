@@ -1,4 +1,5 @@
 import SwiftUI
+import PencilKit
 
 struct NotebookView: View {
     private static let palette: [UIColor] = [
@@ -8,7 +9,7 @@ struct NotebookView: View {
         UIColor(red: 0.13, green: 0.50, blue: 0.33, alpha: 1.0)
     ]
 
-    private static let strokeOptions: [CGFloat] = [2.0, 3.0, 4.5]
+    private static let strokeOptions: [CGFloat] = [0.7, 3.0, 6.0]
 
     @StateObject private var canvasController: CanvasController
 
@@ -34,7 +35,9 @@ struct NotebookView: View {
 
                         PencilCanvasView(controller: canvasController,
                                           pageSize: CGSize(width: 1024, height: 1400),
-                                          paperStyle: .grid)
+                                          paperStyle: .grid,
+                                          attachments: [],
+                                          editingAttachmentID: .constant(nil))
                             .frame(minHeight: geometry.size.height * 3)
                             .padding(.horizontal, 24)
                             .padding(.top, 16)
@@ -50,19 +53,19 @@ struct NotebookView: View {
     private var toolbar: some View {
         HStack(spacing: 18) {
             Button(action: {
-                canvasController.useEraser = false
+                canvasController.tool = .pen
             }) {
                 Image(systemName: "pencil.tip")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(canvasController.useEraser ? Color.secondary : Color.primary)
+                    .foregroundColor(canvasController.tool == .eraser ? Color.secondary : Color.primary)
             }
 
             Button(action: {
-                canvasController.useEraser = true
+                canvasController.tool = .eraser
             }) {
                 Image(systemName: "eraser")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(canvasController.useEraser ? Color.primary : Color.secondary)
+                    .foregroundColor(canvasController.tool == .eraser ? Color.primary : Color.secondary)
             }
 
             Divider()
@@ -91,9 +94,9 @@ struct NotebookView: View {
 
             HStack(spacing: 10) {
                 ForEach(Self.palette, id: \.self) { color in
-                    let isSelected = canvasController.strokeColor == color && !canvasController.useEraser
+                    let isSelected = canvasController.strokeColor == color && canvasController.tool != .eraser
                     Button(action: {
-                        canvasController.useEraser = false
+                        canvasController.tool = .pen
                         canvasController.strokeColor = color
                     }) {
                         Circle()
@@ -112,9 +115,9 @@ struct NotebookView: View {
 
             HStack(spacing: 8) {
                 ForEach(Self.strokeOptions, id: \.self) { width in
-                    let isSelected = abs(canvasController.strokeWidth - width) < 0.1 && !canvasController.useEraser
+                    let isSelected = abs(canvasController.strokeWidth - width) < 0.1 && canvasController.tool != .eraser
                     Button(action: {
-                        canvasController.useEraser = false
+                        canvasController.tool = .pen
                         canvasController.strokeWidth = width
                     }) {
                         Circle()

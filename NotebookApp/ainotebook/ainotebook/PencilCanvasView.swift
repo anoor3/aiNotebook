@@ -1,56 +1,86 @@
 import SwiftUI
+import PencilKit
+import UIKit
 
 struct PencilCanvasView: UIViewRepresentable {
     @ObservedObject var controller: CanvasController
     var pageSize: CGSize
     var paperStyle: PaperStyle = .grid
+    var paperColor: PaperColor = .classic
+    var attachments: [CanvasAttachment] = []
+    @Binding var editingAttachmentID: UUID?
+    var onAttachmentChanged: ((CanvasAttachment) -> Void)?
+    var onAttachmentDeleted: ((UUID) -> Void)?
+    var onAttachmentDuplicated: ((CanvasAttachment) -> Void)?
+    var onAttachmentCopied: ((CanvasAttachment) -> Void)?
+    var onAttachmentCropped: ((CanvasAttachment) -> Void)?
+    var onAttachmentDone: (() -> Void)?
+    var onAttachmentTapOutside: (() -> Void)?
 
     func makeUIView(context: Context) -> ZoomableCanvasHostView {
+        controller.canvasView.delegate = context.coordinator
+        controller.disableScribbleInteraction()
         controller.applyCurrentTool()
         controller.updateUndoState()
 
-        let host = ZoomableCanvasHostView(canvasView: controller.canvasView,
-                                          pageSize: pageSize,
-                                          paperStyle: paperStyle)
+        let host = ZoomableCanvasHostView(
+            canvasView: controller.canvasView,
+            pageSize: pageSize,
+            paperStyle: paperStyle,
+            paperColor: paperColor
+        )
         context.coordinator.attach(hostView: host)
+        updateOverlay(in: host)
         return host
     }
 
     func updateUIView(_ uiView: ZoomableCanvasHostView, context: Context) {
         controller.applyCurrentTool()
         uiView.updatePageSize(pageSize)
-        uiView.updateAttachments(controller.imageAttachments)
+        uiView.updatePaperColor(paperColor)
+        updateOverlay(in: uiView)
+        context.coordinator.handleToolChange(newTool: controller.tool)
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(controller: controller)
     }
 
-    final class Coordinator: NSObject, UIScrollViewDelegate {
+    final class Coordinator: NSObject, PKCanvasViewDelegate, UIScrollViewDelegate {
         private let controller: CanvasController
         private weak var hostView: ZoomableCanvasHostView?
+        private var observingGesture = false
+        private var lastTool: CanvasDrawingTool
 
         init(controller: CanvasController) {
             self.controller = controller
+            self.lastTool = controller.tool
         }
 
         func attach(hostView: ZoomableCanvasHostView) {
             self.hostView = hostView
             hostView.setScrollDelegate(self)
-            hostView.updateInk(with: controller.currentDrawingValue())
-            hostView.updateAttachments(controller.imageAttachments)
-            controller.canvasView.onEraserOverlay = { [weak self] event, point, width in
-                guard let host = self?.hostView else { return }
-                let scaledWidth = width * host.currentZoomScaleFactor
-                switch event {
-                case .began:
-                    host.beginEraserOverlay(at: point, width: scaledWidth)
-                case .moved:
-                    host.continueEraserOverlay(at: point, width: scaledWidth)
-                case .ended:
-                    host.finishEraserOverlay()
-                }
+
+            // ensure initial render is crisp
+            hostView.updateInk(with: controller.canvasView.drawing)
+            handleToolChange(newTool: controller.tool)
+
+            if !observingGesture {
+                controller.canvasView.drawingGestureRecognizer.addTarget(
+                    self,
+                    action: #selector(handleDrawingGesture(_:))
+                )
+                observingGesture = true
             }
+        }
+        
+        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+            controller.updateUndoState()
+            hostView?.queueInkUpdate(with: canvasView.drawing)
+            if controller.tool != .eraser {
+                hostView?.finishEraserOverlay()
+            }
+            controller.publishDrawingChange()
         }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -62,8 +92,10 @@ struct PencilCanvasView: UIViewRepresentable {
         }
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            let z = scrollView.zoomScale
+            hostView?.updateZoomScale(z)
             hostView?.setNeedsGridRedraw()
-            hostView?.updateZoomScale(scrollView.zoomScale)
+            hostView?.updateVisibleInkTiles()
         }
 
         func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
@@ -73,7 +105,90 @@ struct PencilCanvasView: UIViewRepresentable {
             } else {
                 hostView?.updateZoomScale(scale)
             }
+            hostView?.updateVisibleInkTiles()
         }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            hostView?.updateVisibleInkTiles()
+        }
+
+        func handleToolChange(newTool: CanvasDrawingTool) {
+            guard let hostView else {
+                lastTool = newTool
+                return
+            }
+
+            if lastTool != .selection, newTool == .selection {
+                hostView.beginSelection(for: controller.canvasView.drawing)
+            } else if lastTool == .selection, newTool != .selection {
+                hostView.endSelection(with: controller.canvasView.drawing)
+            }
+
+            lastTool = newTool
+        }
+
+        func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+            hostView?.updateInk(with: canvasView.drawing)
+        }
+
+        @objc private func handleDrawingGesture(_ gesture: UIGestureRecognizer) {
+            guard let host = hostView, controller.tool == .eraser else { return }
+            let point = gesture.location(in: host.eraserCoordinateSpace)
+
+            // IMPORTANT:
+            // Width should scale visually with zoom, otherwise it looks wrong.
+            // But DO NOT multiply by insane values — just proportional to zoom.
+            let width = controller.strokeWidth * max(1.0, host.currentZoomScaleFactor)
+
+            switch gesture.state {
+            case .began:
+                host.beginEraserOverlay(at: point, width: width)
+            case .changed:
+                host.continueEraserOverlay(at: point, width: width)
+            case .ended, .cancelled, .failed:
+                host.finishEraserOverlay()
+            default:
+                break
+            }
+        }
+
+        deinit {
+            if observingGesture {
+                controller.canvasView.drawingGestureRecognizer.removeTarget(
+                    self,
+                    action: #selector(handleDrawingGesture(_:))
+                )
+            }
+        }
+
+    }
+
+    private func updateOverlay(in hostView: ZoomableCanvasHostView) {
+        let overlayView = AttachmentOverlay(attachments: attachments,
+                                            pageSize: pageSize,
+                                            editingAttachmentID: $editingAttachmentID,
+                                            onUpdate: { attachment in
+                                                onAttachmentChanged?(attachment)
+                                            },
+                                            onDelete: { id in
+                                                onAttachmentDeleted?(id)
+                                            },
+                                            onDuplicate: { attachment in
+                                                onAttachmentDuplicated?(attachment)
+                                            },
+                                            onCopy: { attachment in
+                                                onAttachmentCopied?(attachment)
+                                            },
+                                            onCrop: { attachment in
+                                                onAttachmentCropped?(attachment)
+                                            },
+                                            onDoneEditing: {
+                                                onAttachmentDone?()
+                                            },
+                                            onTapBackground: {
+                                                onAttachmentTapOutside?()
+                                            })
+        hostView.updateAttachmentOverlay(overlayView)
     }
 }
 
@@ -82,29 +197,41 @@ final class ZoomableCanvasHostView: UIView {
     private let contentView = UIView()
     private let backgroundView = PageBackgroundView()
     private let gridView = GridPaperCanvasView()
+    let attachmentContainer = UIView()
+    private let inkView: TiledInkView
     private let eraserOverlayView = EraserHighlightView()
-    private let canvasView: DrawingCanvasView
+    private let canvasView: PKCanvasView
     private let paperStyle: PaperStyle
+    private var paperColor: PaperColor
+    private var attachmentHostingController: UIHostingController<AttachmentOverlay>?
+    private var pendingInkDrawing: PKDrawing?
+    private var inkUpdateWorkItem: DispatchWorkItem?
+
     private var widthConstraint: NSLayoutConstraint?
     private var heightConstraint: NSLayoutConstraint?
     private var currentZoomScale: CGFloat = 1.0
     private let baseContentScale = UIScreen.main.scale
+    private var lastInkRenderSize: CGSize = .zero
 
     private var pageSize: CGSize {
         didSet { updatePageSizeConstraints() }
     }
+    private var selectionHiddenRect: CGRect?
 
     var zoomableContentView: UIView { contentView }
     var eraserCoordinateSpace: UIView { eraserOverlayView }
     var currentZoomScaleFactor: CGFloat { max(1.0, currentZoomScale) }
 
-    init(canvasView: DrawingCanvasView, pageSize: CGSize, paperStyle: PaperStyle) {
+    init(canvasView: PKCanvasView, pageSize: CGSize, paperStyle: PaperStyle, paperColor: PaperColor) {
         self.canvasView = canvasView
         self.pageSize = pageSize
         self.paperStyle = paperStyle
+        self.paperColor = paperColor
+        self.inkView = TiledInkView(pageSize: pageSize)
         super.init(frame: .zero)
         configureHierarchy()
         updateZoomScale(1.0)
+        applyPaperColor()
     }
 
     required init?(coder: NSCoder) {
@@ -133,9 +260,11 @@ final class ZoomableCanvasHostView: UIView {
     func updatePageSize(_ newSize: CGSize) {
         guard pageSize != newSize else { return }
         pageSize = newSize
-        canvasView.setNeedsDisplay()
+        inkView.updatePageSize(pageSize)
+        updateVisibleInkTiles()
     }
 
+    /// Geometry-only changes (corners, masks). Do NOT do resolution changes here.
     func updateZoomScale(_ scale: CGFloat) {
         currentZoomScale = scale
         let shouldApplyCorners = scale <= 1.02
@@ -148,25 +277,43 @@ final class ZoomableCanvasHostView: UIView {
 
         canvasView.layer.cornerRadius = shouldApplyCorners ? 32 : 0
         canvasView.clipsToBounds = shouldApplyCorners
+    }
 
-        let effectiveScale = max(1.0, scale)
-        let targetScale = baseContentScale * effectiveScale
+    /// 🔥 Resolution-only changes (prevents blur). Safe + necessary.
+    func updateRenderScale(_ zoomScale: CGFloat) {
+        let effective = max(1.0, zoomScale)
+        let targetScale = baseContentScale * effective
 
+        // Grid redraw crisp
         if abs(gridView.contentScaleFactor - targetScale) > 0.01 {
             gridView.contentScaleFactor = targetScale
             gridView.layer.contentsScale = targetScale
             gridView.setNeedsDisplay()
         }
 
-        canvasView.updateScale(targetScale)
+        // Canvas crisp (does NOT change drawing coordinates)
+        if abs(canvasView.contentScaleFactor - targetScale) > 0.01 {
+            canvasView.contentScaleFactor = targetScale
+            canvasView.layer.contentsScale = targetScale
+            canvasView.setNeedsDisplay()
+        }
+
+        // If PencilKit internally uses a subview for rendering, keep it crisp too
+        if let drawingView = canvasView.drawingGestureRecognizer.view ?? canvasView.subviews.first {
+            if abs(drawingView.contentScaleFactor - targetScale) > 0.01 {
+                drawingView.contentScaleFactor = targetScale
+                drawingView.layer.contentsScale = targetScale
+                drawingView.setNeedsDisplay()
+            }
+        }
     }
 
-    func updateInk(with drawing: InkDrawing) {
-        canvasView.setDrawing(drawing)
+    func updateInk(with drawing: PKDrawing) {
+        scheduleInkUpdate(with: drawing, immediate: true)
     }
 
-    func updateAttachments(_ attachments: [PageImageAttachment]) {
-        canvasView.setAttachments(attachments)
+    func queueInkUpdate(with drawing: PKDrawing) {
+        scheduleInkUpdate(with: drawing, immediate: false)
     }
 
     func beginEraserOverlay(at point: CGPoint, width: CGFloat) {
@@ -181,18 +328,75 @@ final class ZoomableCanvasHostView: UIView {
         eraserOverlayView.endStroke()
     }
 
+    func beginSelection(for drawing: PKDrawing) {
+        selectionHiddenRect = drawing.bounds
+    }
+
+    func endSelection(with drawing: PKDrawing) {
+        selectionHiddenRect = nil
+        updateInk(with: drawing)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let inkBounds = inkView.bounds.size
+        if inkBounds.width > 0, inkBounds.height > 0, inkBounds != .zero, inkBounds != lastInkRenderSize {
+            lastInkRenderSize = inkBounds
+            updateVisibleInkTiles()
+        }
+    }
+
+    func updateVisibleInkTiles() {
+        let rect = visibleContentRect()
+        inkView.updateVisibleRect(rect, zoomScale: scrollView.zoomScale)
+    }
+
+    private func scheduleInkUpdate(with drawing: PKDrawing, immediate: Bool) {
+        pendingInkDrawing = drawing
+        inkUpdateWorkItem?.cancel()
+
+        if immediate {
+            applyPendingInkUpdate()
+            return
+        }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.applyPendingInkUpdate()
+        }
+        inkUpdateWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: workItem)
+    }
+
+    private func applyPendingInkUpdate() {
+        guard let drawing = pendingInkDrawing else { return }
+        pendingInkDrawing = nil
+        inkUpdateWorkItem?.cancel()
+        inkUpdateWorkItem = nil
+        inkView.setDrawing(drawing)
+        updateVisibleInkTiles()
+    }
+
+    private func visibleContentRect() -> CGRect {
+        let bounds = scrollView.bounds
+        return scrollView.convert(bounds, to: contentView)
+    }
+
     private func configureHierarchy() {
-        backgroundColor = UIColor(red: 252/255, green: 244/255, blue: 220/255, alpha: 1)
+        // Outer container
+        backgroundColor = .clear
+
+        // Page owns the color (prevents border bleed)
         contentView.translatesAutoresizingMaskIntoConstraints = false
         contentView.clipsToBounds = false
         contentView.layer.cornerRadius = 0
+        contentView.backgroundColor = .clear
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.minimumZoomScale = 1.0
         scrollView.maximumZoomScale = 3.0
         scrollView.bouncesZoom = true
         scrollView.isMultipleTouchEnabled = true
-        scrollView.backgroundColor = UIColor(red: 252/255, green: 244/255, blue: 220/255, alpha: 1)
+        scrollView.backgroundColor = .clear
         scrollView.showsVerticalScrollIndicator = false
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.delaysContentTouches = false
@@ -202,9 +406,6 @@ final class ZoomableCanvasHostView: UIView {
         scrollView.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         scrollView.panGestureRecognizer.minimumNumberOfTouches = 2
         scrollView.contentInsetAdjustmentBehavior = .never
-        scrollView.isExclusiveTouch = false
-        scrollView.panGestureRecognizer.delegate = scrollView
-        scrollView.pinchGestureRecognizer?.delegate = scrollView
 
         addSubview(scrollView)
         scrollView.addSubview(contentView)
@@ -230,6 +431,9 @@ final class ZoomableCanvasHostView: UIView {
 
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
         gridView.translatesAutoresizingMaskIntoConstraints = false
+        attachmentContainer.translatesAutoresizingMaskIntoConstraints = false
+        inkView.translatesAutoresizingMaskIntoConstraints = false
+        eraserOverlayView.translatesAutoresizingMaskIntoConstraints = false
         canvasView.translatesAutoresizingMaskIntoConstraints = false
 
         canvasView.removeFromSuperview()
@@ -238,18 +442,26 @@ final class ZoomableCanvasHostView: UIView {
 
         backgroundView.layer.cornerRadius = 32
         backgroundView.layer.masksToBounds = true
+
         gridView.layer.cornerRadius = 32
         gridView.layer.masksToBounds = true
         gridView.paperStyle = paperStyle
+
+        inkView.isUserInteractionEnabled = false
+
         canvasView.layer.cornerRadius = 32
         canvasView.clipsToBounds = true
 
         contentView.addSubview(backgroundView)
         contentView.addSubview(gridView)
-        contentView.addSubview(canvasView)
+        contentView.addSubview(attachmentContainer)
+        contentView.addSubview(inkView)
         contentView.addSubview(eraserOverlayView)
+        contentView.addSubview(canvasView)
 
-        let subviews = [backgroundView, gridView, canvasView, eraserOverlayView]
+        attachmentContainer.isUserInteractionEnabled = true
+        attachmentContainer.backgroundColor = .clear
+        let subviews = [backgroundView, gridView, attachmentContainer, inkView, eraserOverlayView, canvasView]
         subviews.forEach { subview in
             NSLayoutConstraint.activate([
                 subview.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -258,24 +470,61 @@ final class ZoomableCanvasHostView: UIView {
                 subview.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
             ])
         }
+
+        // Initial state
         prepareForZoomInteraction()
+    }
+
+    func updatePaperColor(_ color: PaperColor) {
+        guard paperColor != color else { return }
+        paperColor = color
+        applyPaperColor()
+    }
+
+    private func applyPaperColor() {
+        let uiColor = paperColor.uiColor
+        contentView.backgroundColor = uiColor
+        backgroundView.updateColor(uiColor)
     }
 
     private func updatePageSizeConstraints() {
         widthConstraint?.constant = pageSize.width
         heightConstraint?.constant = pageSize.height
         layoutIfNeeded()
-        canvasView.setNeedsDisplay()
+        inkView.updatePageSize(pageSize)
+        updateVisibleInkTiles()
     }
+
+    private func expandedSelectionRect(from rect: CGRect) -> CGRect {
+        let padding: CGFloat = 32
+        var target = rect.isNull || rect.isEmpty ? CGRect(origin: .zero, size: pageSize) : rect
+        target = target.insetBy(dx: -padding, dy: -padding)
+        let pageRect = CGRect(origin: .zero, size: pageSize)
+        target = target.intersection(pageRect)
+        if target.isNull {
+            return pageRect
+        }
+        return target
+    }
+
+    func updateAttachmentOverlay(_ overlay: AttachmentOverlay) {
+        if let hosting = attachmentHostingController {
+            hosting.rootView = overlay
+        } else {
+            let hosting = UIHostingController(rootView: overlay)
+            hosting.view.backgroundColor = .clear
+            hosting.view.frame = attachmentContainer.bounds
+            hosting.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            attachmentContainer.addSubview(hosting.view)
+            attachmentHostingController = hosting
+        }
+    }
+
 }
 
-final class CanvasScrollView: UIScrollView, UIGestureRecognizerDelegate {
+final class CanvasScrollView: UIScrollView {
     override func touchesShouldCancel(in view: UIView) -> Bool {
         true
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        touch.type != .pencil
     }
 }
 
@@ -329,12 +578,16 @@ final class EraserHighlightView: UIView {
 }
 
 final class PageBackgroundView: UIView {
-    private let pageColor = UIColor(red: 252/255, green: 244/255, blue: 220/255, alpha: 1.0)
+    private let defaultColor = UIColor(red: 252/255, green: 244/255, blue: 220/255, alpha: 1.0)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
-        backgroundColor = pageColor
+        backgroundColor = defaultColor
+    }
+
+    func updateColor(_ color: UIColor) {
+        backgroundColor = color
     }
 
     required init?(coder: NSCoder) {
@@ -383,18 +636,21 @@ final class GridPaperCanvasView: UIView {
     private func drawGrid(in context: CGContext, rect: CGRect) {
         let spacing: CGFloat = 32
         let insetRect = rect.insetBy(dx: 0.5, dy: 0.5)
+
         var x = insetRect.minX
         while x <= insetRect.maxX + 0.5 {
             context.move(to: CGPoint(x: x, y: insetRect.minY))
             context.addLine(to: CGPoint(x: x, y: insetRect.maxY))
             x += spacing
         }
+
         var y = insetRect.minY
         while y <= insetRect.maxY + 0.5 {
             context.move(to: CGPoint(x: insetRect.minX, y: y))
             context.addLine(to: CGPoint(x: insetRect.maxX, y: y))
             y += spacing
         }
+
         context.strokePath()
     }
 
@@ -402,6 +658,7 @@ final class GridPaperCanvasView: UIView {
         let spacing: CGFloat = 28
         let dotSize: CGFloat = 2
         let insetRect = rect.insetBy(dx: 0.5, dy: 0.5)
+
         for x in stride(from: insetRect.minX, through: insetRect.maxX, by: spacing) {
             for y in stride(from: insetRect.minY, through: insetRect.maxY, by: spacing) {
                 let dotRect = CGRect(x: x - dotSize / 2, y: y - dotSize / 2, width: dotSize, height: dotSize)
@@ -413,6 +670,7 @@ final class GridPaperCanvasView: UIView {
     private func drawLines(in context: CGContext, rect: CGRect) {
         let spacing: CGFloat = 32
         let insetRect = rect.insetBy(dx: 0.5, dy: 0.5)
+
         for y in stride(from: insetRect.minY, through: insetRect.maxY, by: spacing) {
             context.move(to: CGPoint(x: insetRect.minX, y: y))
             context.addLine(to: CGPoint(x: insetRect.maxX, y: y))

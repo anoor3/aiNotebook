@@ -62,6 +62,7 @@ struct NotebookPageView: View {
     @State private var pageIndicatorWorkItem: DispatchWorkItem?
     @State private var scrollProxy: ScrollViewProxy?
     @State private var isProgrammaticJump = false
+    @State private var suppressScrollToActivePage = false
     @State private var isCoverActive = false
     @State private var didApplyInitialPage = false
     @State private var showImageOptions = false
@@ -190,6 +191,7 @@ struct NotebookPageView: View {
 
                     guard !isProgrammaticJump else { return }
                     if pageStore.activePageID != closest.key {
+                        suppressScrollToActivePage = true
                         pageStore.activePageID = closest.key
                         showPageIndicatorTemporary()
                     }
@@ -283,7 +285,11 @@ struct NotebookPageView: View {
                 notebook.currentPageIndex = index
                 SessionStatePersistence.save(notebookID: notebook.id, pageIndex: index)
             }
-            scrollToActivePage()
+            if suppressScrollToActivePage {
+                suppressScrollToActivePage = false
+            } else {
+                scrollToActivePage()
+            }
             showPageIndicatorTemporary()
         }
         .onAppear {

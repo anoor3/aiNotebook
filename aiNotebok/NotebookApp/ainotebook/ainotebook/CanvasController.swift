@@ -53,6 +53,7 @@ final class CanvasController: ObservableObject {
 
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
+    @Published var zoomScale: CGFloat = 1.0
 
     init(id: UUID = UUID(),
          strokeColor: UIColor = UIColor(red: 0.12, green: 0.26, blue: 0.52, alpha: 1.0),

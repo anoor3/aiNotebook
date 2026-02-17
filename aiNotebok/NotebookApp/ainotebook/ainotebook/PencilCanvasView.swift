@@ -8,6 +8,7 @@ struct PencilCanvasView: UIViewRepresentable {
     var paperStyle: PaperStyle = .grid
     var paperColor: PaperColor = .classic
     var attachments: [CanvasAttachment] = []
+    var sharedZoomScale: Binding<CGFloat>? = nil
     @Binding var editingAttachmentID: UUID?
     var onAttachmentChanged: ((CanvasAttachment) -> Void)?
     var onAttachmentDeleted: ((UUID) -> Void)?
@@ -43,7 +44,7 @@ struct PencilCanvasView: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(controller: controller)
+        Coordinator(controller: controller, sharedZoomScale: sharedZoomScale)
     }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate, UIScrollViewDelegate {
@@ -51,10 +52,12 @@ struct PencilCanvasView: UIViewRepresentable {
         private weak var hostView: ZoomableCanvasHostView?
         private var observingGesture = false
         private var lastTool: CanvasDrawingTool
+        private let sharedZoomScale: Binding<CGFloat>?
 
-        init(controller: CanvasController) {
+        init(controller: CanvasController, sharedZoomScale: Binding<CGFloat>?) {
             self.controller = controller
             self.lastTool = controller.tool
+            self.sharedZoomScale = sharedZoomScale
         }
 
         func attach(hostView: ZoomableCanvasHostView) {
@@ -96,16 +99,23 @@ struct PencilCanvasView: UIViewRepresentable {
             hostView?.updateZoomScale(z)
             hostView?.setNeedsGridRedraw()
             hostView?.updateVisibleInkTiles()
+            controller.zoomScale = z
+            sharedZoomScale?.wrappedValue = z
         }
 
         func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
-            if scale < 1.0 {
-                hostView?.resetZoom(animated: true)
-                hostView?.updateZoomScale(1.0)
-            } else {
-                hostView?.updateZoomScale(scale)
+            let minScale = scrollView.minimumZoomScale
+            let maxScale = scrollView.maximumZoomScale
+            let clampedScale = min(max(scale, minScale), maxScale)
+
+            if abs(clampedScale - scrollView.zoomScale) > 0.001 {
+                scrollView.setZoomScale(clampedScale, animated: true)
             }
+
+            hostView?.updateZoomScale(clampedScale)
             hostView?.updateVisibleInkTiles()
+            controller.zoomScale = clampedScale
+            sharedZoomScale?.wrappedValue = clampedScale
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -392,7 +402,7 @@ final class ZoomableCanvasHostView: UIView {
         contentView.backgroundColor = .clear
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.minimumZoomScale = 1.0
+        scrollView.minimumZoomScale = 0.4
         scrollView.maximumZoomScale = 3.0
         scrollView.bouncesZoom = true
         scrollView.isMultipleTouchEnabled = true

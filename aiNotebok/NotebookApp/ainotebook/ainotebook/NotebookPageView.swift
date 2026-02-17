@@ -89,6 +89,7 @@ struct NotebookPageView: View {
     @ObservedObject private var voiceRecorder: VoiceRecorderManager
     @State private var shapeAttachmentKinds: [UUID: ShapeTemplate.Kind] = [:]
     @State private var pasteboardHasImage = UIPasteboard.general.hasImages
+    @State private var sharedZoomScale: CGFloat = 1.0
 
     private var workspaceBackground: Color {
         switch pageColor {
@@ -128,6 +129,7 @@ struct NotebookPageView: View {
             let pageScale = self.pageScale(for: geometry.size.width)
             let scaledHeight = pageSize.height * pageScale
             let viewportHeight = max(min(scaledHeight + 60, geometry.size.height - 80), 420)
+            let isZoomedOut = sharedZoomScale < 0.85
 
             ZStack(alignment: .top) {
                 workspaceBackground
@@ -139,8 +141,10 @@ struct NotebookPageView: View {
 
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 40) {
-                                coverPage(pageSize: pageSize, viewportHeight: viewportHeight)
+                            LazyVStack(spacing: isZoomedOut ? 4 : 40) {
+                                coverPage(pageSize: pageSize,
+                                          viewportHeight: viewportHeight,
+                                          isZoomedOut: isZoomedOut)
                                     .frame(width: pageSize.width, height: pageSize.height)
                                     .scaleEffect(pageScale, anchor: .center)
                                     .frame(width: pageSize.width * pageScale,
@@ -152,7 +156,8 @@ struct NotebookPageView: View {
                                     notebookPage(for: controller,
                                                  pageSize: pageSize,
                                                  viewportHeight: viewportHeight,
-                                                 pageScale: pageScale)
+                                                 pageScale: pageScale,
+                                                 isZoomedOut: isZoomedOut)
                                         .frame(maxWidth: .infinity)
                                         .id(controller.id)
                                 }
@@ -162,7 +167,7 @@ struct NotebookPageView: View {
                                         requestAdditionalPage()
                                     }
                             }
-                            .padding(.vertical, 40)
+                            .padding(.vertical, isZoomedOut ? 8 : 40)
                             .frame(maxWidth: .infinity)
                         }
                         .coordinateSpace(name: scrollSpaceName)
@@ -173,7 +178,7 @@ struct NotebookPageView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, isZoomedOut ? 4 : 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .onPreferenceChange(PageVisibilityPreferenceKey.self) { values in
                     guard let closest = values.min(by: { $0.value < $1.value }) else { return }
@@ -642,10 +647,12 @@ struct NotebookPageView: View {
         return "Page \(index + 1) of \(pageStore.pages.count)"
     }
 
-    private func coverPage(pageSize: CGSize, viewportHeight: CGFloat) -> some View {
+    private func coverPage(pageSize: CGSize, viewportHeight: CGFloat, isZoomedOut: Bool) -> some View {
         NotebookCoverPage(notebook: $notebook)
-            .shadow(color: Color.black.opacity(0.08), radius: 18, y: 8)
-            .padding(.horizontal, 4)
+            .shadow(color: isZoomedOut ? Color.clear : Color.black.opacity(0.08),
+                    radius: isZoomedOut ? 0 : 18,
+                    y: isZoomedOut ? 0 : 8)
+            .padding(.horizontal, isZoomedOut ? 0 : 4)
             .background(
                 GeometryReader { proxy in
                     Color.clear.preference(key: PageVisibilityPreferenceKey.self,
@@ -657,7 +664,8 @@ struct NotebookPageView: View {
     private func notebookPage(for controller: CanvasController,
                               pageSize: CGSize,
                               viewportHeight: CGFloat,
-                              pageScale: CGFloat) -> some View {
+                              pageScale: CGFloat,
+                              isZoomedOut: Bool) -> some View {
         let pageID = controller.id
         let attachments = canvasAttachments(for: pageID)
         let binding = Binding<UUID?>(
@@ -679,6 +687,7 @@ struct NotebookPageView: View {
                                            paperStyle: paperStyle,
                                            paperColor: pageColor,
                                            attachments: attachments,
+                                           sharedZoomScale: $sharedZoomScale,
                                            editingAttachmentID: binding,
                                            onAttachmentChanged: { updated in
                                                handleAttachmentUpdate(updated, for: pageID)
@@ -724,8 +733,10 @@ struct NotebookPageView: View {
             .frame(width: pageSize.width * pageScale,
                    height: pageSize.height * pageScale,
                    alignment: .center)
-            .shadow(color: Color.black.opacity(0.08), radius: 18, y: 8)
-            .padding(.horizontal, 4)
+            .shadow(color: isZoomedOut ? Color.clear : Color.black.opacity(0.08),
+                    radius: isZoomedOut ? 0 : 18,
+                    y: isZoomedOut ? 0 : 8)
+            .padding(.horizontal, isZoomedOut ? 0 : 4)
             .background(
                 GeometryReader { proxy in
                     Color.clear.preference(key: PageVisibilityPreferenceKey.self,

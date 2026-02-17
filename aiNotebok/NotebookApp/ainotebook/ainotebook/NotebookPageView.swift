@@ -93,7 +93,7 @@ struct NotebookPageView: View {
     private var workspaceBackground: Color {
         switch pageColor {
         case .classic:
-            return Color(red: 0.97, green: 0.96, blue: 0.92)
+            return Color(red: 0.95, green: 0.94, blue: 0.9)
         case .white:
             return Color(uiColor: .systemGray6)
         }
@@ -2200,7 +2200,7 @@ private struct PaperBackground: View {
         case .dot:
             DotPaperBackground()
         case .blank:
-            Color(red: 0.97, green: 0.96, blue: 0.92)
+            Color(red: 233/255, green: 228/255, blue: 216/255)
         case .lined:
             LinedPaperBackground()
         }
@@ -2209,11 +2209,11 @@ private struct PaperBackground: View {
 
 private struct DotPaperBackground: View {
     private let spacing: CGFloat = 28
-    private let dotColor = Color.black.opacity(0.12)
+    private let dotColor = Color(red: 178/255, green: 172/255, blue: 156/255).opacity(0.55)
 
     var body: some View {
         GeometryReader { geometry in
-            Color(red: 0.97, green: 0.96, blue: 0.92)
+            Color(red: 233/255, green: 228/255, blue: 216/255)
                 .overlay(
                     Canvas { context, size in
                         let dotSize: CGFloat = 2
@@ -2237,7 +2237,7 @@ private struct LinedPaperBackground: View {
 
     var body: some View {
         GeometryReader { geometry in
-            Color(red: 0.97, green: 0.96, blue: 0.92)
+            Color(red: 233/255, green: 228/255, blue: 216/255)
                 .overlay(
                     Canvas { context, size in
                         var path = Path()
@@ -2254,11 +2254,11 @@ private struct LinedPaperBackground: View {
 
 private struct GridPaperBackground: View {
     private let spacing: CGFloat = 28
-    private let gridColor = Color(red: 0.78, green: 0.78, blue: 0.72).opacity(0.5)
+    private let gridColor = Color(red: 178/255, green: 172/255, blue: 156/255).opacity(0.85)
 
     var body: some View {
         GeometryReader { geometry in
-            Color(red: 0.97, green: 0.96, blue: 0.92)
+            Color(red: 233/255, green: 228/255, blue: 216/255)
                 .overlay(
                     Canvas { context, size in
                         var path = Path()

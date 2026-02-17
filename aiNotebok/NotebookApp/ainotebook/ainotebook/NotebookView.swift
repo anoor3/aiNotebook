@@ -138,7 +138,7 @@ struct NotebookView: View {
 
 private struct GridBackground: View {
     private let gridSpacing: CGFloat = 28
-    private let lineColor = Color.black.opacity(0.06)
+    private let lineColor = Color(red: 178/255, green: 172/255, blue: 156/255).opacity(0.85)
 
     var body: some View {
         GeometryReader { geometry in
@@ -159,7 +159,7 @@ private struct GridBackground: View {
                 }
             }
             .stroke(lineColor, lineWidth: 0.5)
-            .background(Color(red: 0.97, green: 0.96, blue: 0.93))
+            .background(Color(red: 233/255, green: 228/255, blue: 216/255))
         }
     }
 }

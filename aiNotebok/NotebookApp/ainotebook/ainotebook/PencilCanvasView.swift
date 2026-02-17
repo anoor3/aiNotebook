@@ -578,7 +578,7 @@ final class EraserHighlightView: UIView {
 }
 
 final class PageBackgroundView: UIView {
-    private let defaultColor = UIColor(red: 252/255, green: 244/255, blue: 220/255, alpha: 1.0)
+    private let defaultColor = PaperColor.classic.uiColor
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -597,7 +597,7 @@ final class PageBackgroundView: UIView {
 
 final class GridPaperCanvasView: UIView {
     var paperStyle: PaperStyle = .grid
-    private let gridColor = UIColor(red: 205/255, green: 205/255, blue: 185/255, alpha: 0.85)
+    private let gridColor = UIColor(red: 178/255, green: 172/255, blue: 156/255, alpha: 0.85)
 
     override init(frame: CGRect) {
         super.init(frame: frame)

@@ -151,7 +151,7 @@ enum NotebookExportService {
     }
 
     private static func drawBackground(in context: CGContext, rect: CGRect) {
-        let pageColor = UIColor(red: 252/255, green: 244/255, blue: 220/255, alpha: 1.0)
+        let pageColor = UIColor(red: 233/255, green: 228/255, blue: 216/255, alpha: 1.0)
         context.setFillColor(pageColor.cgColor)
         context.fill(rect)
     }
@@ -159,7 +159,7 @@ enum NotebookExportService {
     private static func drawPaperStyle(_ style: PaperStyle,
                                        in context: CGContext,
                                        rect: CGRect) {
-        let gridColor = UIColor(red: 205/255, green: 205/255, blue: 185/255, alpha: 0.85)
+        let gridColor = UIColor(red: 178/255, green: 172/255, blue: 156/255, alpha: 0.85)
         context.saveGState()
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)

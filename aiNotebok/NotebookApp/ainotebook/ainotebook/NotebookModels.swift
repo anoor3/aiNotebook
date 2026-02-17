@@ -114,7 +114,7 @@ enum PaperColor: String, CaseIterable, Identifiable, Codable {
     var uiColor: UIColor {
         switch self {
         case .classic:
-            return UIColor(red: 252/255, green: 244/255, blue: 220/255, alpha: 1.0)
+            return UIColor(red: 233/255, green: 228/255, blue: 216/255, alpha: 1.0)
         case .white:
             return UIColor(white: 1.0, alpha: 1.0)
         }

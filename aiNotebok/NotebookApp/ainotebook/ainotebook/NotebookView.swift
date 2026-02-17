@@ -45,7 +45,7 @@ struct NotebookView: View {
                 }
                 .background(Color.clear)
             }
-            .background(Color(red: 0.97, green: 0.96, blue: 0.93))
+            .background(Color(red: 245/255, green: 245/255, blue: 240/255))
             .edgesIgnoringSafeArea(.bottom)
         }
     }

@@ -95,7 +95,7 @@ struct NotebookPageView: View {
         case .classic:
             return Color(red: 0.95, green: 0.94, blue: 0.9)
         case .white:
-            return Color(uiColor: .systemGray6)
+            return Color(red: 245/255, green: 245/255, blue: 240/255)
         }
     }
 

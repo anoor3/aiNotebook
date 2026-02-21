@@ -100,7 +100,8 @@ struct PencilCanvasView: UIViewRepresentable {
         }
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
-            let z = scrollView.zoomScale
+            let minimum = scrollView.minimumZoomScale
+            let z = max(scrollView.zoomScale, minimum)
             hostView?.updateZoomScale(z)
             hostView?.setNeedsGridRedraw()
             hostView?.updateVisibleInkTiles()
@@ -415,7 +416,7 @@ final class ZoomableCanvasHostView: UIView {
         contentView.backgroundColor = .clear
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.minimumZoomScale = 0.4
+        scrollView.minimumZoomScale = 1.0
         scrollView.maximumZoomScale = 3.0
         scrollView.bouncesZoom = true
         scrollView.isMultipleTouchEnabled = true

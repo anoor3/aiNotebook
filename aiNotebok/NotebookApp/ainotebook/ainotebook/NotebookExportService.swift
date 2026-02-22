@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import UIKit
 import PencilKit
+import PDFKit
 
 struct NotebookExportPagePayload {
     let id: UUID
@@ -73,27 +74,31 @@ enum NotebookExportService {
     private static func exportPDF(pages: [NotebookExportPagePayload],
                                   notebookTitle: String,
                                   pageSize: CGSize) throws -> URL {
-        let bounds = CGRect(origin: .zero, size: pageSize)
-        let rendererFormat = UIGraphicsPDFRendererFormat()
-        rendererFormat.documentInfo = [
-            kCGPDFContextCreator as String: "Notebook Export",
-            kCGPDFContextTitle as String: notebookTitle
-        ]
-        let renderer = UIGraphicsPDFRenderer(bounds: bounds, format: rendererFormat)
         let url = temporaryURL(for: notebookTitle, extension: "pdf")
+        let document = PDFDocument()
+        document.documentAttributes = [
+            PDFDocumentAttribute.creatorAttribute: "Notebook Export",
+            PDFDocumentAttribute.titleAttribute: notebookTitle
+        ]
 
-        do {
-            try renderer.writePDF(to: url) { context in
-                for page in pages {
-                    autoreleasepool {
-                        context.beginPage()
-                        render(page: page,
-                               in: context.cgContext,
-                               pageSize: pageSize)
-                    }
+        for page in pages {
+            try autoreleasepool {
+                let image = snapshotDrawing(drawingData: page.drawingData,
+                                            pageSize: pageSize,
+                                            attachments: page.attachments,
+                                            paperStyle: page.paperStyle,
+                                            paperColor: page.paperColor,
+                                            scale: 3.0)
+
+                guard let pdfPage = PDFPage(image: image) else {
+                    throw NotebookExportError.renderFailed
                 }
+                pdfPage.setBounds(CGRect(origin: .zero, size: pageSize), for: .mediaBox)
+                document.insert(pdfPage, at: document.pageCount)
             }
-        } catch {
+        }
+
+        guard document.write(to: url) else {
             throw NotebookExportError.writeFailed
         }
 
@@ -104,19 +109,15 @@ enum NotebookExportService {
                                      notebookTitle: String,
                                      pageSize: CGSize) throws -> [URL] {
         var urls: [URL] = []
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = UIScreen.main.scale
-        format.opaque = true
-        format.preferredRange = .standard
-        let renderer = UIGraphicsImageRenderer(size: pageSize, format: format)
 
         for page in pages {
             try autoreleasepool {
-                let image = renderer.image { context in
-                    render(page: page,
-                           in: context.cgContext,
-                           pageSize: pageSize)
-                }
+                let image = snapshotDrawing(drawingData: page.drawingData,
+                                            pageSize: pageSize,
+                                            attachments: page.attachments,
+                                            paperStyle: page.paperStyle,
+                                            paperColor: page.paperColor,
+                                            scale: UIScreen.main.scale)
 
                 guard let data = image.pngData() else {
                     throw NotebookExportError.renderFailed
@@ -135,23 +136,6 @@ enum NotebookExportService {
         }
 
         return urls
-    }
-
-    private static func render(page: NotebookExportPagePayload,
-                                in context: CGContext,
-                                pageSize: CGSize) {
-        let rect = CGRect(origin: .zero, size: pageSize)
-        drawBackground(for: page.paperColor, in: context, rect: rect)
-        drawPaperStyle(page.paperStyle, color: page.paperColor, in: context, rect: rect)
-        let image = snapshotDrawing(drawingData: page.drawingData,
-                                    pageSize: pageSize,
-                                    attachments: page.attachments,
-                                    paperStyle: page.paperStyle,
-                                    paperColor: page.paperColor)
-        context.saveGState()
-        context.interpolationQuality = .high
-        image.draw(in: rect)
-        context.restoreGState()
     }
 
     private static func drawBackground(for color: PaperColor,
@@ -247,9 +231,10 @@ enum NotebookExportService {
                                          pageSize: CGSize,
                                          attachments: [NotebookPageImage],
                                          paperStyle: PaperStyle,
-                                         paperColor: PaperColor) -> UIImage {
+                                         paperColor: PaperColor,
+                                         scale: CGFloat) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 3.0
+        format.scale = scale
         format.opaque = true
         format.preferredRange = .standard
         let renderer = UIGraphicsImageRenderer(size: pageSize, format: format)

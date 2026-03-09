@@ -1,3 +1,5 @@
+//THIS IS A DEMO PAGE. AND THE API KEY IS FAKE. IF SOMEONE WANTS TO RUN IT. 
+// THEN JUST INSERT YOUR API KEY DOWN THERE AND DONOT PUBLISH API KEY 
 import Foundation
 
 // MARK: - OpenRouter Chat Service (Plain Text Only)
@@ -7,7 +9,7 @@ enum OpenRouterChatService {
     // MARK: Configuration
     struct Configuration {
         // ⚠️ Move this to Keychain or environment later
-        static let apiKey: String = "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"
+        static let apiKey: String = "INSERT KEY HERE : ) &N HIDE THIS FILE"
     }
 
     // MARK: Request Models

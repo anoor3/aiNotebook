@@ -204,17 +204,14 @@ private struct AttachmentItemView: View {
     }
 
     private var selectionOverlay: some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.accentColor.opacity(0.9), style: StrokeStyle(lineWidth: 1.2, dash: [5]))
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.accentColor.opacity(0.9), style: StrokeStyle(lineWidth: 1.2, dash: [5]))
 
-                ForEach(HandlePosition.allCases, id: \.self) { position in
-                    ResizeHandleView()
-                        .position(position.point(in: size, margin: handleMargin))
-                        .gesture(resizeGesture(for: position))
-                }
+            ForEach(HandlePosition.allCases, id: \.self) { position in
+                ResizeHandleView()
+                    .offset(position.offset(for: workingAttachment.size, margin: handleMargin))
+                    .gesture(resizeGesture(for: position))
             }
         }
         .frame(width: workingAttachment.size.width, height: workingAttachment.size.height)
@@ -264,12 +261,11 @@ private struct AttachmentItemView: View {
                 }
                 guard let state = rotationDragState else { return }
                 setInteracting(true)
-                let translationGlobal = rotate(offset: value.translation, angle: state.attachment.rotation)
-                let vector = CGVector(dx: state.handleVector.dx + translationGlobal.width,
-                                      dy: state.handleVector.dy + translationGlobal.height)
+                let vector = CGVector(dx: state.handleVector.dx + value.translation.width,
+                                      dy: state.handleVector.dy + value.translation.height)
                 var updated = state.attachment
                 let angle = atan2(vector.dy, vector.dx)
-                updated.rotation = angle + (.pi / 2)
+                updated.rotation = angle - (.pi / 2)
                 workingAttachment = updated
             }
             .onEnded { _ in
@@ -301,29 +297,25 @@ private struct AttachmentItemView: View {
         var affectsWidth: Bool { horizontalFactor != 0 }
         var affectsHeight: Bool { verticalFactor != 0 }
 
-        func point(in size: CGSize, margin: CGFloat) -> CGPoint {
-            let minX: CGFloat = 0
-            let maxX = size.width
-            let midX = size.width / 2
-            let minY: CGFloat = 0
-            let maxY = size.height
-            let midY = size.height / 2
+        func offset(for size: CGSize, margin: CGFloat) -> CGSize {
+            let halfWidth = size.width / 2
+            let halfHeight = size.height / 2
 
-            var x: CGFloat
+            var x: CGFloat = 0
             switch horizontalFactor {
-            case -1: x = minX - margin
-            case 1: x = maxX + margin
-            default: x = midX
+            case -1: x = -halfWidth - margin
+            case 1: x = halfWidth + margin
+            default: x = 0
             }
 
-            var y: CGFloat
+            var y: CGFloat = 0
             switch verticalFactor {
-            case -1: y = minY - margin
-            case 1: y = maxY + margin
-            default: y = midY
+            case -1: y = -halfHeight - margin
+            case 1: y = halfHeight + margin
+            default: y = 0
             }
 
-            return CGPoint(x: x, y: y)
+            return CGSize(width: x, height: y)
         }
     }
 
@@ -368,7 +360,7 @@ private struct AttachmentItemView: View {
         var size = start.size
         size.width += local.width * handle.horizontalFactor
         size.height += local.height * handle.verticalFactor
-        size = clampedSize(size, baseline: start.size)
+        size = clampedSize(size)
 
         var centerOffsetLocal = CGSize.zero
         if handle.affectsWidth { centerOffsetLocal.width = local.width / 2 }
@@ -503,48 +495,14 @@ private struct AttachmentItemView: View {
         return adjusted
     }
 
-    private func clampedSize(_ size: CGSize, baseline: CGSize? = nil) -> CGSize {
+    private func clampedSize(_ size: CGSize) -> CGSize {
         guard pageSize.width > 0, pageSize.height > 0 else { return size }
         let minDimension: CGFloat = 120
         let maxWidth = pageSize.width * 0.95
         let maxHeight = pageSize.height * 0.95
 
-        let reference = baseline ?? workingAttachment.size
-        let fallbackWidth = max(reference.width, 0.01)
-        let fallbackHeight = max(reference.height, 0.01)
-        let rawWidth = size.width
-        let rawHeight = size.height
-        let denominator = rawWidth > 0.01 ? rawWidth : fallbackWidth
-        let numerator = rawHeight > 0.01 ? rawHeight : fallbackHeight
-        let computedAspect = numerator / max(denominator, 0.01)
-        let aspect = (computedAspect.isFinite && computedAspect > 0) ? computedAspect : fallbackHeight / max(fallbackWidth, 0.01)
-
-        var newWidth = max(minDimension, min(rawWidth, maxWidth))
-        var newHeight = newWidth * aspect
-
-        if newHeight > maxHeight {
-            newHeight = maxHeight
-            newWidth = newHeight / max(aspect, 0.01)
-        }
-
-        if newHeight < minDimension {
-            newHeight = minDimension
-            newWidth = newHeight / max(aspect, 0.01)
-            if newWidth > maxWidth {
-                newWidth = maxWidth
-                newHeight = newWidth * aspect
-            }
-        }
-
-        if newWidth < minDimension {
-            newWidth = minDimension
-            newHeight = newWidth * aspect
-            if newHeight > maxHeight {
-                newHeight = maxHeight
-                newWidth = newHeight / aspect
-            }
-        }
-
-        return CGSize(width: newWidth, height: newHeight)
+        let width = max(minDimension, min(size.width, maxWidth))
+        let height = max(minDimension, min(size.height, maxHeight))
+        return CGSize(width: width, height: height)
     }
 }

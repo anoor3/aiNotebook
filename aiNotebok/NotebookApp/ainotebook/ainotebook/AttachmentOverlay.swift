@@ -89,8 +89,8 @@ private struct AttachmentItemView: View {
     let onDone: (() -> Void)?
 
     private let attachmentCornerRadius: CGFloat = 6
-    private let handleMargin: CGFloat = 14
-    private let rotationHandleSpacing: CGFloat = 70
+    private let handleMargin: CGFloat = 0
+    private let rotationHandleSpacing: CGFloat = 90
 
     @State private var workingAttachment: CanvasAttachment
     @State private var renderedImage: UIImage?
@@ -208,7 +208,7 @@ private struct AttachmentItemView: View {
             let size = proxy.size
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.accentColor.opacity(0.9), style: StrokeStyle(lineWidth: 1.5, dash: [6]))
+                    .stroke(Color.accentColor.opacity(0.9), style: StrokeStyle(lineWidth: 1.2, dash: [5]))
 
                 ForEach(HandlePosition.allCases, id: \.self) { position in
                     ResizeHandleView()
@@ -218,19 +218,18 @@ private struct AttachmentItemView: View {
             }
         }
         .frame(width: workingAttachment.size.width, height: workingAttachment.size.height)
-        .overlay(alignment: .top) { rotationOverlay }
+        .overlay(alignment: .bottom) { rotationOverlay }
     }
 
     private var rotationOverlay: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Capsule()
-                .fill(Color.accentColor.opacity(0.6))
-                .frame(width: 2, height: max(12, rotationHandleSpacing - 24))
+                .fill(Color.accentColor.opacity(0.55))
+                .frame(width: 2, height: max(20, rotationHandleSpacing - 36))
             RotationHandleView()
-                .shadow(color: Color.black.opacity(0.25), radius: 3, x: 0, y: 1)
         }
         .contentShape(Rectangle())
-        .offset(y: -rotationHandleSpacing)
+        .offset(y: rotationHandleSpacing)
         .gesture(rotationHandleGesture)
     }
 
@@ -265,14 +264,12 @@ private struct AttachmentItemView: View {
                 }
                 guard let state = rotationDragState else { return }
                 setInteracting(true)
-                let startPoint = CGPoint(x: state.attachment.center.x + state.handleVector.dx,
-                                         y: state.attachment.center.y + state.handleVector.dy)
-                let translatedPoint = CGPoint(x: startPoint.x + value.translation.width,
-                                              y: startPoint.y + value.translation.height)
-                let vector = CGVector(dx: translatedPoint.x - state.attachment.center.x,
-                                      dy: translatedPoint.y - state.attachment.center.y)
+                let translationGlobal = rotate(offset: value.translation, angle: state.attachment.rotation)
+                let vector = CGVector(dx: state.handleVector.dx + translationGlobal.width,
+                                      dy: state.handleVector.dy + translationGlobal.height)
                 var updated = state.attachment
-                updated.rotation = atan2(vector.dy, vector.dx) - .pi / 2
+                let angle = atan2(vector.dy, vector.dx)
+                updated.rotation = angle + (.pi / 2)
                 workingAttachment = updated
             }
             .onEnded { _ in
@@ -334,11 +331,11 @@ private struct AttachmentItemView: View {
         var body: some View {
             Circle()
                 .fill(Color.white)
-                .frame(width: 18, height: 18)
-                .shadow(color: Color.black.opacity(0.2), radius: 3, x: 0, y: 1)
+                .frame(width: 12, height: 12)
+                .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
                 .overlay(
                     Circle()
-                        .stroke(Color.accentColor, lineWidth: 2)
+                        .stroke(Color.accentColor, lineWidth: 1.5)
                 )
         }
     }
@@ -347,8 +344,9 @@ private struct AttachmentItemView: View {
         var body: some View {
             Circle()
                 .fill(Color.white)
-                .frame(width: 24, height: 24)
+                .frame(width: 20, height: 20)
                 .overlay(Circle().stroke(Color.accentColor, lineWidth: 2))
+                .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
         }
     }
 
@@ -406,7 +404,7 @@ private struct AttachmentItemView: View {
 
     private func rotationHandleVector(for attachment: CanvasAttachment) -> CGVector {
         let distance = (attachment.size.height / 2) + rotationHandleSpacing
-        let base = CGVector(dx: 0, dy: -distance)
+        let base = CGVector(dx: 0, dy: distance)
         return CGVector(dx: base.dx * cos(attachment.rotation) - base.dy * sin(attachment.rotation),
                         dy: base.dx * sin(attachment.rotation) + base.dy * cos(attachment.rotation))
     }

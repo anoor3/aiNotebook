@@ -89,12 +89,16 @@ private struct AttachmentItemView: View {
     let onDone: (() -> Void)?
 
     private let attachmentCornerRadius: CGFloat = 6
+    private let handleMargin: CGFloat = 14
+    private let rotationHandleSpacing: CGFloat = 70
 
     @State private var workingAttachment: CanvasAttachment
     @State private var renderedImage: UIImage?
     @State private var dragStart: CGPoint?
     @State private var scaleStart: CGSize?
     @State private var rotationStart: CGFloat?
+    @State private var activeHandleState: HandleDragState?
+    @State private var rotationDragState: RotationDragState?
     @State private var isInteracting = false
     private var allowsEditing: Bool { !attachment.isLocked }
 
@@ -132,20 +136,20 @@ private struct AttachmentItemView: View {
                         .frame(width: workingAttachment.size.width,
                                height: workingAttachment.size.height)
                         .clipShape(RoundedRectangle(cornerRadius: attachmentCornerRadius))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: attachmentCornerRadius)
-                                .stroke((isEditing && allowsEditing) ? Color.accentColor.opacity(0.7) : Color.clear,
-                                        lineWidth: 2)
-                        )
-                        .shadow(color: Color.black.opacity(0.25), radius: 8, x: 0, y: 4)
-                        .rotationEffect(.radians(Double(workingAttachment.rotation)))
-                        .overlay(alignment: .top) {
-                            if isEditing && allowsEditing && !isInteracting {
-                                controlBar
-                                    .scaleEffect(0.9)
-                                    .padding(.top, -60)
-                            }
-                        }
+
+                    if isEditing && allowsEditing {
+                        selectionOverlay
+                    }
+                }
+                .frame(width: workingAttachment.size.width, height: workingAttachment.size.height)
+                .shadow(color: Color.black.opacity(0.25), radius: 8, x: 0, y: 4)
+                .rotationEffect(.radians(Double(workingAttachment.rotation)))
+                .overlay(alignment: .top) {
+                    if isEditing && allowsEditing && !isInteracting {
+                        controlBar
+                            .scaleEffect(0.9)
+                            .offset(y: -workingAttachment.size.height / 2 - 60)
+                    }
                 }
                 .position(workingAttachment.center)
                 .gesture(editingGesture, including: .gesture)
@@ -197,6 +201,214 @@ private struct AttachmentItemView: View {
         }
         .buttonStyle(.plain)
         .background(Color.white.opacity(0.6), in: Circle())
+    }
+
+    private var selectionOverlay: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.accentColor.opacity(0.9), style: StrokeStyle(lineWidth: 1.5, dash: [6]))
+
+                ForEach(HandlePosition.allCases, id: \.self) { position in
+                    ResizeHandleView()
+                        .position(position.point(in: size, margin: handleMargin))
+                        .gesture(resizeGesture(for: position))
+                }
+            }
+        }
+        .frame(width: workingAttachment.size.width, height: workingAttachment.size.height)
+        .overlay(alignment: .top) { rotationOverlay }
+    }
+
+    private var rotationOverlay: some View {
+        VStack(spacing: 8) {
+            Capsule()
+                .fill(Color.accentColor.opacity(0.6))
+                .frame(width: 2, height: max(12, rotationHandleSpacing - 24))
+            RotationHandleView()
+                .shadow(color: Color.black.opacity(0.25), radius: 3, x: 0, y: 1)
+        }
+        .contentShape(Rectangle())
+        .offset(y: -rotationHandleSpacing)
+        .gesture(rotationHandleGesture)
+    }
+
+    private func resizeGesture(for position: HandlePosition) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard isEditing, allowsEditing else { return }
+                if activeHandleState?.position != position {
+                    activeHandleState = HandleDragState(position: position, attachment: workingAttachment)
+                }
+                guard let state = activeHandleState else { return }
+                setInteracting(true)
+                let local = convertToLocalTranslation(value.translation, rotation: state.attachment.rotation)
+                workingAttachment = adjustedAttachment(from: state.attachment,
+                                                        translation: local,
+                                                        handle: position)
+            }
+            .onEnded { _ in
+                activeHandleState = nil
+                commitTransform()
+                setInteracting(false)
+            }
+    }
+
+    private var rotationHandleGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard isEditing, allowsEditing else { return }
+                if rotationDragState == nil {
+                    rotationDragState = RotationDragState(attachment: workingAttachment,
+                                                           handleVector: rotationHandleVector(for: workingAttachment))
+                }
+                guard let state = rotationDragState else { return }
+                setInteracting(true)
+                let startPoint = CGPoint(x: state.attachment.center.x + state.handleVector.dx,
+                                         y: state.attachment.center.y + state.handleVector.dy)
+                let translatedPoint = CGPoint(x: startPoint.x + value.translation.width,
+                                              y: startPoint.y + value.translation.height)
+                let vector = CGVector(dx: translatedPoint.x - state.attachment.center.x,
+                                      dy: translatedPoint.y - state.attachment.center.y)
+                var updated = state.attachment
+                updated.rotation = atan2(vector.dy, vector.dx) - .pi / 2
+                workingAttachment = updated
+            }
+            .onEnded { _ in
+                rotationDragState = nil
+                commitTransform()
+                setInteracting(false)
+            }
+    }
+
+    private enum HandlePosition: CaseIterable {
+        case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
+
+        var horizontalFactor: CGFloat {
+            switch self {
+            case .topLeft, .left, .bottomLeft: return -1
+            case .topRight, .right, .bottomRight: return 1
+            default: return 0
+            }
+        }
+
+        var verticalFactor: CGFloat {
+            switch self {
+            case .topLeft, .top, .topRight: return -1
+            case .bottomLeft, .bottom, .bottomRight: return 1
+            default: return 0
+            }
+        }
+
+        var affectsWidth: Bool { horizontalFactor != 0 }
+        var affectsHeight: Bool { verticalFactor != 0 }
+
+        func point(in size: CGSize, margin: CGFloat) -> CGPoint {
+            let minX: CGFloat = 0
+            let maxX = size.width
+            let midX = size.width / 2
+            let minY: CGFloat = 0
+            let maxY = size.height
+            let midY = size.height / 2
+
+            var x: CGFloat
+            switch horizontalFactor {
+            case -1: x = minX - margin
+            case 1: x = maxX + margin
+            default: x = midX
+            }
+
+            var y: CGFloat
+            switch verticalFactor {
+            case -1: y = minY - margin
+            case 1: y = maxY + margin
+            default: y = midY
+            }
+
+            return CGPoint(x: x, y: y)
+        }
+    }
+
+    private struct ResizeHandleView: View {
+        var body: some View {
+            Circle()
+                .fill(Color.white)
+                .frame(width: 18, height: 18)
+                .shadow(color: Color.black.opacity(0.2), radius: 3, x: 0, y: 1)
+                .overlay(
+                    Circle()
+                        .stroke(Color.accentColor, lineWidth: 2)
+                )
+        }
+    }
+
+    private struct RotationHandleView: View {
+        var body: some View {
+            Circle()
+                .fill(Color.white)
+                .frame(width: 24, height: 24)
+                .overlay(Circle().stroke(Color.accentColor, lineWidth: 2))
+        }
+    }
+
+    private func convertToLocalTranslation(_ translation: CGSize, rotation: CGFloat) -> CGSize {
+        let angle = -rotation
+        let cosA = cos(angle)
+        let sinA = sin(angle)
+        return CGSize(width: translation.width * cosA - translation.height * sinA,
+                      height: translation.width * sinA + translation.height * cosA)
+    }
+
+    private func adjustedAttachment(from start: CanvasAttachment,
+                                     translation: CGSize,
+                                     handle: HandlePosition) -> CanvasAttachment {
+        var local = translation
+        if !handle.affectsWidth { local.width = 0 }
+        if !handle.affectsHeight { local.height = 0 }
+
+        var size = start.size
+        size.width += local.width * handle.horizontalFactor
+        size.height += local.height * handle.verticalFactor
+        size = clampedSize(size, baseline: start.size)
+
+        var centerOffsetLocal = CGSize.zero
+        if handle.affectsWidth { centerOffsetLocal.width = local.width / 2 }
+        if handle.affectsHeight { centerOffsetLocal.height = local.height / 2 }
+
+        let rotatedOffset = rotate(offset: centerOffsetLocal, angle: start.rotation)
+        var center = CGPoint(x: start.center.x + rotatedOffset.width,
+                             y: start.center.y + rotatedOffset.height)
+        center = clampedCenter(center, size: size)
+
+        var updated = start
+        updated.size = size
+        updated.center = center
+        return updated
+    }
+
+    private func rotate(offset: CGSize, angle: CGFloat) -> CGSize {
+        let cosA = cos(angle)
+        let sinA = sin(angle)
+        return CGSize(width: offset.width * cosA - offset.height * sinA,
+                      height: offset.width * sinA + offset.height * cosA)
+    }
+
+    private struct HandleDragState {
+        let position: HandlePosition
+        let attachment: CanvasAttachment
+    }
+
+    private struct RotationDragState {
+        let attachment: CanvasAttachment
+        let handleVector: CGVector
+    }
+
+    private func rotationHandleVector(for attachment: CanvasAttachment) -> CGVector {
+        let distance = (attachment.size.height / 2) + rotationHandleSpacing
+        let base = CGVector(dx: 0, dy: -distance)
+        return CGVector(dx: base.dx * cos(attachment.rotation) - base.dy * sin(attachment.rotation),
+                        dy: base.dx * sin(attachment.rotation) + base.dy * cos(attachment.rotation))
     }
 
     private var editingGesture: some Gesture {
@@ -293,14 +505,15 @@ private struct AttachmentItemView: View {
         return adjusted
     }
 
-    private func clampedSize(_ size: CGSize) -> CGSize {
+    private func clampedSize(_ size: CGSize, baseline: CGSize? = nil) -> CGSize {
         guard pageSize.width > 0, pageSize.height > 0 else { return size }
         let minDimension: CGFloat = 120
         let maxWidth = pageSize.width * 0.95
         let maxHeight = pageSize.height * 0.95
 
-        let fallbackWidth = max(workingAttachment.size.width, 0.01)
-        let fallbackHeight = max(workingAttachment.size.height, 0.01)
+        let reference = baseline ?? workingAttachment.size
+        let fallbackWidth = max(reference.width, 0.01)
+        let fallbackHeight = max(reference.height, 0.01)
         let rawWidth = size.width
         let rawHeight = size.height
         let denominator = rawWidth > 0.01 ? rawWidth : fallbackWidth
@@ -313,12 +526,12 @@ private struct AttachmentItemView: View {
 
         if newHeight > maxHeight {
             newHeight = maxHeight
-            newWidth = newHeight / aspect
+            newWidth = newHeight / max(aspect, 0.01)
         }
 
         if newHeight < minDimension {
             newHeight = minDimension
-            newWidth = newHeight / aspect
+            newWidth = newHeight / max(aspect, 0.01)
             if newWidth > maxWidth {
                 newWidth = maxWidth
                 newHeight = newWidth * aspect

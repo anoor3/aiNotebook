@@ -451,19 +451,9 @@ struct NotebookPageView: View {
             }
 
             HStack(spacing: 12) {
-                Button(action: { activePageController?.undo() }) {
-                    Image(systemName: "arrow.uturn.backward")
+                if let controller = activePageController {
+                    UndoRedoControls(controller: controller)
                 }
-                .buttonStyle(ToolbarButtonStyle(isActive: false))
-                .disabled(!(activePageController?.canUndo ?? false))
-                .opacity((activePageController?.canUndo ?? false) ? 1.0 : 0.4)
-
-                Button(action: { activePageController?.redo() }) {
-                    Image(systemName: "arrow.uturn.forward")
-                }
-                .buttonStyle(ToolbarButtonStyle(isActive: false))
-                .disabled(!(activePageController?.canRedo ?? false))
-                .opacity((activePageController?.canRedo ?? false) ? 1.0 : 0.4)
 
                 Button(action: presentImageOptions) {
                     Image(systemName: "photo.on.rectangle")
@@ -2288,6 +2278,28 @@ private struct GridPaperBackground: View {
                         context.stroke(path, with: .color(gridColor), lineWidth: 0.7)
                     }
                 )
+        }
+    }
+}
+
+private struct UndoRedoControls: View {
+    @ObservedObject var controller: CanvasController
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: { controller.undo() }) {
+                Image(systemName: "arrow.uturn.backward")
+            }
+            .buttonStyle(ToolbarButtonStyle(isActive: false))
+            .disabled(!controller.canUndo)
+            .opacity(controller.canUndo ? 1.0 : 0.4)
+
+            Button(action: { controller.redo() }) {
+                Image(systemName: "arrow.uturn.forward")
+            }
+            .buttonStyle(ToolbarButtonStyle(isActive: false))
+            .disabled(!controller.canRedo)
+            .opacity(controller.canRedo ? 1.0 : 0.4)
         }
     }
 }

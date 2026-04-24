@@ -1,15 +1,65 @@
-//THIS IS A DEMO PAGE. AND THE API KEY IS FAKE. IF SOMEONE WANTS TO RUN IT. 
-// THEN JUST INSERT YOUR API KEY DOWN THERE AND DONOT PUBLISH API KEY 
 import Foundation
 
-// MARK: - OpenRouter Chat Service (Plain Text Only)
+// MARK: - OpenAI Chat Service (Plain Text)
 
-enum OpenRouterChatService {
-
+enum OpenAIChatService {
     // MARK: Configuration
     struct Configuration {
-        // ⚠️ Move this to Keychain or environment later
-        static let apiKey: String = "INSERT KEY HERE : ) &N HIDE THIS FILE"
+        static let model: String = "gpt-4o-mini"
+
+        /// Read the key from Xcode Scheme environment variables (recommended)
+        /// or from `Info.plist` key `OPENAI_API_KEY`.
+        static var apiKey: String? {
+            // Back-compat: older builds used OPENROUTER_API_KEY.
+            let env = ProcessInfo.processInfo.environment
+            let envKey = env["OPENAI_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let envKey, !envKey.isEmpty { return envKey }
+
+            let legacyEnvKey = env["OPENROUTER_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let legacyEnvKey, !legacyEnvKey.isEmpty { return legacyEnvKey }
+
+            let plistKey = Bundle.main.object(forInfoDictionaryKey: "OPENAI_API_KEY") as? String
+            let trimmedPlistKey = plistKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmedPlistKey, !trimmedPlistKey.isEmpty { return trimmedPlistKey }
+
+            let legacyPlistKey = Bundle.main.object(forInfoDictionaryKey: "OPENROUTER_API_KEY") as? String
+            let trimmedLegacyPlistKey = legacyPlistKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmedLegacyPlistKey, !trimmedLegacyPlistKey.isEmpty { return trimmedLegacyPlistKey }
+
+            let bundledKey = bundledEnvValue(named: "OPENAI_API_KEY")?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let bundledKey, !bundledKey.isEmpty { return bundledKey }
+
+            let legacyBundledKey = bundledEnvValue(named: "OPENROUTER_API_KEY")?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let legacyBundledKey, !legacyBundledKey.isEmpty { return legacyBundledKey }
+
+            return nil
+        }
+
+        /// Optionally load a key from a bundled env file.
+        ///
+        /// If you create `openai.env` locally (for example in `env/openai.env`) and add it
+        /// to the Xcode target's "Copy Bundle Resources", it will be available here without
+        /// hardcoding secrets into source.
+        private static func bundledEnvValue(named key: String) -> String? {
+            guard let url = Bundle.main.url(forResource: "openai", withExtension: "env"),
+                  let contents = try? String(contentsOf: url, encoding: .utf8) else {
+                return nil
+            }
+
+            for rawLine in contents.split(whereSeparator: \.isNewline) {
+                let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                if line.isEmpty || line.hasPrefix("#") { continue }
+                guard let equalsIndex = line.firstIndex(of: "=") else { continue }
+
+                let name = String(line[..<equalsIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if name != key { continue }
+
+                let valueStart = line.index(after: equalsIndex)
+                return String(line[valueStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            return nil
+        }
     }
 
     // MARK: Request Models
@@ -21,7 +71,7 @@ enum OpenRouterChatService {
     struct ChatRequest: Codable {
         let model: String
         let messages: [ChatRequestMessage]
-        let stream: Bool
+        let stream: Bool?
     }
 
     // MARK: Response Models
@@ -38,34 +88,24 @@ enum OpenRouterChatService {
     // MARK: Public API
     static func send(messages: [AIChatMessage]) async throws -> String {
 
-        guard !Configuration.apiKey.isEmpty else {
+        guard let apiKey = Configuration.apiKey else {
             throw NSError(
-                domain: "OpenRouterChatService",
+                domain: "OpenAIChatService",
                 code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "OpenRouter API key is missing."]
+                userInfo: [NSLocalizedDescriptionKey: "OpenAI API key is missing. Set OPENAI_API_KEY (or legacy OPENROUTER_API_KEY) in your Xcode Scheme (Run > Arguments > Environment), or create env/.env at the repo root (it will be copied into the app bundle as openai.env during build)."]
             )
         }
 
-        let url = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
+        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
 
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue("Bearer \(Configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        // 🔥 SYSTEM MESSAGE TO KILL MARKDOWN COMPLETELY
         let systemMessage = ChatRequestMessage(
             role: "system",
-            content: """
-Reply in plain text only.
-No markdown.
-No formatting.
-No symbols.
-No dashes.
-No long explanations.
-Use short simple sentences.
-Answer directly.
-"""
+            content: "Reply in plain text. Avoid markdown formatting unless the user explicitly asks for it."
         )
 
         let userMessages = messages.map {
@@ -76,9 +116,9 @@ Answer directly.
         }
 
         let payload = ChatRequest(
-            model: "mistralai/devstral-2512:free",
+            model: Configuration.model,
             messages: [systemMessage] + userMessages,
-            stream: false
+            stream: nil
         )
 
         request.httpBody = try JSONEncoder().encode(payload)
@@ -90,7 +130,7 @@ Answer directly.
 
             let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw NSError(
-                domain: "OpenRouterChatService",
+                domain: "OpenAIChatService",
                 code: -2,
                 userInfo: [NSLocalizedDescriptionKey: errorBody]
             )
@@ -105,3 +145,6 @@ Answer directly.
         return reply.isEmpty ? "No response." : reply
     }
 }
+
+// Backwards compatibility: older code referenced this name.
+typealias OpenRouterChatService = OpenAIChatService

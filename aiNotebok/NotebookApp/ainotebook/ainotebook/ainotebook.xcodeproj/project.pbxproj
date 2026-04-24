@@ -159,6 +159,7 @@
 				C4F707662EF0B65700AA5C45 /* Sources */,
 				C4F707672EF0B65700AA5C45 /* Frameworks */,
 				C4F707682EF0B65700AA5C45 /* Resources */,
+				C4F70C002F0B000100AA5C45 /* Copy OpenAI Env */,
 			);
 			buildRules = (
 			);
@@ -279,6 +280,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		C4F70C002F0B000100AA5C45 /* Copy OpenAI Env */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			basedOnDependencyAnalysis = 0;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/openai.env",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\n# Prefer git to find the repo root (works for worktrees too).\nROOT=\"$(/usr/bin/git -C \"$SRCROOT\" rev-parse --show-toplevel 2>/dev/null || true)\"\n\n# Fallback: walk up until we see a .git marker (dir or file).\nif [ -z \"$ROOT\" ]; then\n  ROOT=\"$SRCROOT\"\n  while [ \"$ROOT\" != \"/\" ] && [ ! -e \"$ROOT/.git\" ]; do\n    ROOT=\"$(dirname \"$ROOT\")\"\n  done\nfi\n\nENV_FILE=\"$ROOT/env/.env\"\nOUT_DIR=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\nOUT_FILE=\"$OUT_DIR/openai.env\"\n\necho \"SRCROOT=$SRCROOT\"\necho \"ROOT=$ROOT\"\necho \"ENV_FILE=$ENV_FILE\"\n\nif [ -f \"$ENV_FILE\" ]; then\n  mkdir -p \"$OUT_DIR\"\n  cp \"$ENV_FILE\" \"$OUT_FILE\"\n  echo \"Copied $ENV_FILE -> $OUT_FILE\"\nelse\n  echo \"Warning: $ENV_FILE not found; set OPENAI_API_KEY via Scheme or Info.plist\"\nfi\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		C4F707662EF0B65700AA5C45 /* Sources */ = {

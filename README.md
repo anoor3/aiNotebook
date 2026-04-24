@@ -22,6 +22,12 @@ A SwiftUI + PencilKit iPad notebook that feels like paper, keeps your ideas orga
 2. Build and run the **ainotebook** target.
 3. Create a notebook, pick a cover color and paper style, and start drawing. Your notebooks and pages will auto-save.
 
+## OpenAI API key (for the AI chat)
+- The app reads your key from the environment variable `OPENAI_API_KEY` (recommended).
+- In Xcode: **Product → Scheme → Edit Scheme… → Run → Arguments → Environment Variables** and add `OPENAI_API_KEY`.
+- A sample file is provided at `.env.example`. You can keep your real key in `env/` locally (the `env/` folder is in `.gitignore`).
+- Optional: create `env/openai.env` with `OPENAI_API_KEY=...`, then add it to the Xcode target’s **Copy Bundle Resources** so the app can read it at runtime.
+
 ## Notes
 - The app targets iPadOS and uses PencilKit (Apple Pencil recommended).
 - Autosave runs on a background queue; drawings persist per page, and library metadata persists across launches.

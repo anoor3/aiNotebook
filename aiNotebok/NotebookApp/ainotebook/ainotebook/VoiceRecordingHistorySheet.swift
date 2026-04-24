@@ -399,8 +399,8 @@ private struct RecordingTranscriptSheet: View {
             rewriteError = "Transcribe the audio first."
             return
         }
-        guard !OpenRouterChatService.Configuration.apiKey.isEmpty else {
-            rewriteError = "Add your OpenRouter API key in OpenRouterChatService.Configuration."
+        guard OpenAIChatService.Configuration.apiKey != nil else {
+            rewriteError = "Missing OpenAI API key. Set OPENAI_API_KEY (or legacy OPENROUTER_API_KEY) in your Xcode Scheme environment variables, or create env/.env at the repo root (copied into the app bundle during build)."
             return
         }
         rewriteError = nil
@@ -421,7 +421,7 @@ Use concise bullet points, no markdown symbols beyond dashes, and do not invent 
 Voice note:
 \(transcript)
 """
-                let reply = try await OpenRouterChatService.send(messages: [AIChatMessage(role: .user, text: prompt)])
+                let reply = try await OpenAIChatService.send(messages: [AIChatMessage(role: .user, text: prompt)])
                 await MainActor.run {
                     recorder.updateSummary(for: recordingID, summary: reply)
                     isRewriting = false

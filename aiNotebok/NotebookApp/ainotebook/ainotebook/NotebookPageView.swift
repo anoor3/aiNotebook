@@ -1684,7 +1684,7 @@ private struct AIChatSheet: View {
 
         Task {
             do {
-                let reply = try await OpenRouterChatService.send(messages: messages)
+                let reply = try await OpenAIChatService.send(messages: messages)
                 await MainActor.run {
                     messages.append(AIChatMessage(role: .assistant, text: reply))
                     isSending = false

@@ -2,6 +2,9 @@
 
 A SwiftUI + PencilKit iPad notebook that feels like paper, keeps your ideas organized, and now remembers your notebooks between sessions.
 
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Abdullah%20Noor-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/abdullah-noor1/)
+[![Email](https://img.shields.io/badge/Email-abdullahnoorllc%40gmail.com-EA4335?logo=gmail&logoColor=white)](mailto:abdullahnoorllc@gmail.com)
+
 ## What it does
 - **Digital ink that feels natural:** Pen/eraser tools, multiple stroke widths, and a custom color picker for quick sketching.
 - **Pages that grow with you:** Infinite scrolling adds new pages automatically; a page grid lets you jump around.

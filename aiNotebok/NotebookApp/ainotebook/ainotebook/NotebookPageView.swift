@@ -820,13 +820,13 @@ struct NotebookPageView: View {
             proxy.scrollTo(targetID, anchor: .top)
         }
         if animated {
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+            withAnimation(.easeOut(duration: 0.3)) {
                 scrollAction()
             }
         } else {
             scrollAction()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             isProgrammaticJump = false
         }
     }

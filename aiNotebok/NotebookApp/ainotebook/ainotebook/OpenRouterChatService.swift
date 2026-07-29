@@ -15,48 +15,57 @@ enum OpenAIChatService {
             // Back-compat: older builds used OPENROUTER_API_KEY.
             let env = ProcessInfo.processInfo.environment
             let envKey = env["OPENAI_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let envKey, !envKey.isEmpty {
+            if let envKey, isValidKey(envKey) {
                 persistKey(envKey)
                 return envKey
             }
 
             let legacyEnvKey = env["OPENROUTER_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let legacyEnvKey, !legacyEnvKey.isEmpty {
+            if let legacyEnvKey, isValidKey(legacyEnvKey) {
                 persistKey(legacyEnvKey)
                 return legacyEnvKey
             }
 
             let plistKey = Bundle.main.object(forInfoDictionaryKey: "OPENAI_API_KEY") as? String
             let trimmedPlistKey = plistKey?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let trimmedPlistKey, !trimmedPlistKey.isEmpty {
+            if let trimmedPlistKey, isValidKey(trimmedPlistKey) {
                 persistKey(trimmedPlistKey)
                 return trimmedPlistKey
             }
 
             let legacyPlistKey = Bundle.main.object(forInfoDictionaryKey: "OPENROUTER_API_KEY") as? String
             let trimmedLegacyPlistKey = legacyPlistKey?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let trimmedLegacyPlistKey, !trimmedLegacyPlistKey.isEmpty {
+            if let trimmedLegacyPlistKey, isValidKey(trimmedLegacyPlistKey) {
                 persistKey(trimmedLegacyPlistKey)
                 return trimmedLegacyPlistKey
             }
 
             let bundledKey = bundledEnvValue(named: "OPENAI_API_KEY")?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let bundledKey, !bundledKey.isEmpty {
+            if let bundledKey, isValidKey(bundledKey) {
                 persistKey(bundledKey)
                 return bundledKey
             }
 
             let legacyBundledKey = bundledEnvValue(named: "OPENROUTER_API_KEY")?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let legacyBundledKey, !legacyBundledKey.isEmpty {
+            if let legacyBundledKey, isValidKey(legacyBundledKey) {
                 persistKey(legacyBundledKey)
                 return legacyBundledKey
             }
 
             // Fallback: read from UserDefaults (persisted from a previous session)
             let savedKey = UserDefaults.standard.string(forKey: userDefaultsKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let savedKey, !savedKey.isEmpty { return savedKey }
+            if let savedKey, isValidKey(savedKey) { return savedKey }
 
             return nil
+        }
+
+        /// Check if a key looks like a real API key (not a placeholder).
+        private static func isValidKey(_ key: String) -> Bool {
+            guard !key.isEmpty else { return false }
+            let lower = key.lowercased()
+            if lower.contains("your_key") || lower.contains("your_api") || lower == "placeholder" { return false }
+            // OpenAI keys start with sk-
+            return key.hasPrefix("sk-")
         }
 
         /// Persist the key to UserDefaults so standalone launches (outside Xcode) can read it.

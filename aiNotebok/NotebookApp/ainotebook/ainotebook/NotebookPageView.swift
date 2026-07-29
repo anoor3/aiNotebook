@@ -224,7 +224,7 @@ struct NotebookPageView: View {
         .overlay(alignment: .bottomTrailing) {
             if showPageIndicator, let indicatorText = pageIndicatorText {
                 Text(indicatorText)
-                    .font(.caption.bold())
+                    .font(.system(.caption, design: .monospaced).bold())
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(.thinMaterial, in: Capsule())
@@ -346,7 +346,7 @@ struct NotebookPageView: View {
             } else {
                 VStack(spacing: 16) {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
+                        .font(.system(.largeTitle, design: .monospaced))
                     Text("Unable to load image for cropping.")
                         .multilineTextAlignment(.center)
                     Button("Close") {
@@ -613,7 +613,7 @@ struct NotebookPageView: View {
                 .foregroundColor(.secondary)
 
             Text("Scroll for a new page")
-                .font(.subheadline)
+                .font(.system(.subheadline, design: .monospaced))
                 .foregroundColor(.secondary)
 
             if isLoadingNextPage {
@@ -1489,9 +1489,9 @@ private struct AIChatSheet: View {
             if let errorMessage {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption)
+                        .font(.system(.caption, design: .monospaced))
                     Text(errorMessage)
-                        .font(.caption)
+                        .font(.system(.caption, design: .monospaced))
                         .lineLimit(2)
                 }
                 .foregroundColor(.red)
@@ -1517,16 +1517,16 @@ private struct AIChatSheet: View {
     private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: "sparkles")
-                .font(.title3)
+                .font(.system(.title3, design: .monospaced))
                 .foregroundStyle(
                     LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("AI Assistant")
-                    .font(.headline)
+                    .font(.system(.headline, design: .monospaced))
                 Text("Ask anything about your notes")
-                    .font(.caption)
+                    .font(.system(.caption, design: .monospaced))
                     .foregroundColor(.secondary)
             }
 
@@ -1540,9 +1540,9 @@ private struct AIChatSheet: View {
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.caption.weight(.semibold))
+                            .font(.system(.caption, design: .monospaced).weight(.semibold))
                         Text("New Chat")
-                            .font(.caption.weight(.semibold))
+                            .font(.system(.caption, design: .monospaced).weight(.semibold))
                     }
                     .foregroundColor(.accentColor)
                     .padding(.horizontal, 12)
@@ -1554,7 +1554,7 @@ private struct AIChatSheet: View {
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.subheadline.weight(.medium))
+                    .font(.system(.subheadline, design: .monospaced).weight(.medium))
                     .foregroundColor(.secondary)
                     .padding(8)
                     .background(Color(.tertiarySystemFill), in: Circle())
@@ -1574,9 +1574,9 @@ private struct AIChatSheet: View {
                         )
                     VStack(spacing: 6) {
                         Text("Start a conversation")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.system(.subheadline, design: .monospaced).weight(.semibold))
                         Text("Ask questions, brainstorm ideas, or get help with your notes.")
-                            .font(.caption)
+                            .font(.system(.caption, design: .monospaced))
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                     }
@@ -1631,7 +1631,7 @@ private struct AIChatSheet: View {
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                     } else {
                         Image(systemName: "arrow.up")
-                            .font(.subheadline.weight(.bold))
+                            .font(.system(.subheadline, design: .monospaced).weight(.bold))
                             .foregroundColor(.white)
                     }
                 }
@@ -1681,18 +1681,18 @@ private struct AIChatBubble: View {
         HStack(alignment: .top, spacing: 10) {
             if message.role == .assistant {
                 Image(systemName: "sparkles")
-                    .font(.caption)
+                    .font(.system(.caption, design: .monospaced))
                     .foregroundColor(.purple)
                     .frame(width: 24, height: 24)
                     .background(Color.purple.opacity(0.1), in: Circle())
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(message.text)
-                        .font(.body)
+                        .font(.system(.body, design: .monospaced))
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
                     Text(message.timestamp.formatted(date: .omitted, time: .shortened))
-                        .font(.caption2)
+                        .font(.system(.caption2, design: .monospaced))
                         .foregroundColor(.secondary.opacity(0.7))
                 }
                 .padding(14)
@@ -1705,11 +1705,11 @@ private struct AIChatBubble: View {
 
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(message.text)
-                        .font(.body)
+                        .font(.system(.body, design: .monospaced))
                         .foregroundColor(.white)
                         .textSelection(.enabled)
                     Text(message.timestamp.formatted(date: .omitted, time: .shortened))
-                        .font(.caption2)
+                        .font(.system(.caption2, design: .monospaced))
                         .foregroundColor(.white.opacity(0.7))
                 }
                 .padding(14)
@@ -1816,7 +1816,7 @@ private struct ImageInsertOptionsSheet: View {
         NavigationView {
             VStack(spacing: 24) {
                 Text("Insert Image")
-                    .font(.title3.weight(.semibold))
+                    .font(.system(.title3, design: .monospaced).weight(.semibold))
 
                 VStack(spacing: 16) {
                     Button {
@@ -1883,7 +1883,7 @@ private struct PageExportSheet: View {
                 .pickerStyle(.segmented)
 
                 Text(format.description)
-                    .font(.footnote)
+                    .font(.system(.footnote, design: .monospaced))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -1896,7 +1896,7 @@ private struct PageExportSheet: View {
 
                 HStack {
                     Text("\(selectedCount) selected")
-                        .font(.footnote)
+                        .font(.system(.footnote, design: .monospaced))
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -1912,7 +1912,7 @@ private struct PageExportSheet: View {
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.caption)
+                        .font(.system(.caption, design: .monospaced))
                         .foregroundColor(.red)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -1942,21 +1942,21 @@ private struct PageExportSheet: View {
         }) {
             HStack(spacing: 12) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .font(.system(.title3, design: .monospaced))
                     .foregroundColor(isSelected ? .accentColor : .secondary)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(page.title.isEmpty ? "Page \(index + 1)" : page.title)
-                        .font(.headline)
+                        .font(.system(.headline, design: .monospaced))
                     Text("Page \(index + 1)")
-                        .font(.caption)
+                        .font(.system(.caption, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
 
                 Spacer()
 
                 Image(systemName: "chevron.right")
-                    .font(.footnote)
+                    .font(.system(.footnote, design: .monospaced))
                     .foregroundColor(.secondary)
                     .opacity(0.5)
             }
@@ -2104,14 +2104,14 @@ private struct NotebookCoverPage: View {
                     Label(Date.now.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
                 }
                 .foregroundColor(.white.opacity(0.85))
-                .font(.subheadline.weight(.medium))
+                .font(.system(.subheadline, design: .monospaced).weight(.medium))
 
                 Spacer()
 
                 HStack {
                     Spacer()
                     Image(systemName: "bookmark.fill")
-                        .font(.title2)
+                        .font(.system(.title2, design: .monospaced))
                         .foregroundColor(.white.opacity(0.85))
                         .padding(16)
                         .background(Color.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -2428,7 +2428,7 @@ struct ShapePickerSheet: View {
                     }
 
                     Text("GIF stickers coming soon.")
-                        .font(.footnote)
+                        .font(.system(.footnote, design: .monospaced))
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

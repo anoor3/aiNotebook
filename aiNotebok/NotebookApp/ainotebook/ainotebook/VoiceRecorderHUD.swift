@@ -14,7 +14,7 @@ struct VoiceRecorderHUD: View {
                     .font(.caption.weight(.semibold))
                 if let pageLabel {
                     Text(pageLabel)
-                        .font(.caption2)
+                        .font(.system(.caption2, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
             }
@@ -54,7 +54,7 @@ struct VoiceRecorderHUD: View {
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
                 .foregroundColor(foreground)
                 .frame(width: 28, height: 28)
                 .background(Circle().fill(tint))
@@ -80,7 +80,7 @@ struct VoiceRecordingIndicator: View {
 
             Button(action: onStop) {
                 Image(systemName: "stop.fill")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(.white)
                     .padding(6)
                     .background(Color.red.opacity(0.9))

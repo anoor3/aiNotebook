@@ -89,7 +89,7 @@ private struct PageListView: View {
                             Text("Page \(index + 1)")
                             if let latest = recordings.first {
                                 Text("\(latest.title) • \(formattedDuration(latest.duration))")
-                                    .font(.caption)
+                                    .font(.system(.caption, design: .monospaced))
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
                             }
@@ -199,7 +199,7 @@ private struct AddPageOptionsView: View {
             VStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Insert")
-                        .font(.caption)
+                        .font(.system(.caption, design: .monospaced))
                         .fontWeight(.semibold)
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
@@ -219,7 +219,7 @@ private struct AddPageOptionsView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Import")
-                        .font(.caption)
+                        .font(.system(.caption, design: .monospaced))
                         .fontWeight(.semibold)
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
@@ -238,7 +238,7 @@ private struct AddPageOptionsView: View {
                     .tint(.accentColor)
                     .disabled(isImportingPDF)
                     Text("Adds every PDF page at the selected position.")
-                        .font(.footnote)
+                        .font(.system(.footnote, design: .monospaced))
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

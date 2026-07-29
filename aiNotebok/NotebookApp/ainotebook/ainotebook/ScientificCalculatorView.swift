@@ -141,7 +141,7 @@ struct ScientificCalculatorView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Angle Mode")
-                    .font(.caption)
+                    .font(.system(.caption, design: .monospaced))
                     .foregroundColor(.secondary)
                 Picker("Angle Mode", selection: $angleMode) {
                     ForEach(AngleMode.allCases) { mode in
@@ -217,7 +217,7 @@ struct ScientificCalculatorView: View {
                     .font(.system(size: 17, weight: .medium, design: .rounded))
                     .foregroundColor(.primary)
                 Text("Scientific mode")
-                    .font(.caption2)
+                    .font(.system(.caption2, design: .monospaced))
                     .foregroundColor(.secondary)
             }
             Spacer()

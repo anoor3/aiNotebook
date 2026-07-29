@@ -56,7 +56,7 @@ struct NotebookView: View {
                 canvasController.tool = .pen
             }) {
                 Image(systemName: "pencil.tip")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 18, weight: .medium, design: .monospaced))
                     .foregroundColor(canvasController.tool == .eraser ? Color.secondary : Color.primary)
             }
 
@@ -64,7 +64,7 @@ struct NotebookView: View {
                 canvasController.tool = .eraser
             }) {
                 Image(systemName: "eraser")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 18, weight: .medium, design: .monospaced))
                     .foregroundColor(canvasController.tool == .eraser ? Color.primary : Color.secondary)
             }
 
@@ -75,7 +75,7 @@ struct NotebookView: View {
                 canvasController.undo()
             }) {
                 Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(.system(size: 17, weight: .medium, design: .monospaced))
             }
             .disabled(!canvasController.canUndo)
             .opacity(canvasController.canUndo ? 1.0 : 0.4)
@@ -84,7 +84,7 @@ struct NotebookView: View {
                 canvasController.redo()
             }) {
                 Image(systemName: "arrow.uturn.forward")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(.system(size: 17, weight: .medium, design: .monospaced))
             }
             .disabled(!canvasController.canRedo)
             .opacity(canvasController.canRedo ? 1.0 : 0.4)

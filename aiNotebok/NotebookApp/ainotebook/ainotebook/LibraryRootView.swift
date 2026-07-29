@@ -286,7 +286,7 @@ private struct ThemedNotebookCard: View {
                 if notebook.isFavorite {
                     Image(systemName: theme.favoriteIcon)
                         .foregroundColor(theme.favoriteColor)
-                        .font(.title3)
+                        .font(.system(.title3, design: .monospaced))
                 }
                 Spacer()
                 Text(notebook.title)
@@ -322,7 +322,7 @@ private struct ThemedNotebookCard: View {
                 if notebook.isFavorite {
                     Image(systemName: theme.favoriteIcon)
                         .foregroundColor(.white.opacity(0.9))
-                        .font(.title3)
+                        .font(.system(.title3, design: .monospaced))
                 }
                 Spacer()
                 Text(notebook.title)
@@ -461,9 +461,9 @@ private struct ThemePickerSheet: View {
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(themeOption.displayName)
-                                    .font(.headline)
+                                    .font(.system(.headline, design: .monospaced))
                                 Text(themeOption == .classic ? "Light background, colorful covers" : "Dark background, monospace, retro style")
-                                    .font(.caption)
+                                    .font(.system(.caption, design: .monospaced))
                                     .foregroundColor(.secondary)
                             }
 
@@ -472,7 +472,7 @@ private struct ThemePickerSheet: View {
                             if themeOption == currentThemeID {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.accentColor)
-                                    .font(.title3)
+                                    .font(.system(.title3, design: .monospaced))
                             }
                         }
                         .padding(16)
@@ -509,12 +509,12 @@ private struct NotebookTrashSheet: View {
                 if notebooks.isEmpty {
                     VStack(alignment: .center, spacing: 8) {
                         Image(systemName: "trash")
-                            .font(.title)
+                            .font(.system(.title, design: .monospaced))
                             .foregroundColor(.secondary)
                         Text("Trash is empty")
-                            .font(.headline)
+                            .font(.system(.headline, design: .monospaced))
                         Text("Notebooks you delete will appear here.")
-                            .font(.subheadline)
+                            .font(.system(.subheadline, design: .monospaced))
                             .foregroundColor(.secondary)
                     }
                     .frame(maxWidth: .infinity)
@@ -527,9 +527,9 @@ private struct NotebookTrashSheet: View {
                                 .frame(width: 28, height: 28)
                             VStack(alignment: .leading) {
                                 Text(notebook.title)
-                                    .font(.headline)
+                                    .font(.system(.headline, design: .monospaced))
                                 Text("Last opened \(formatted(date: notebook.lastOpened))")
-                                    .font(.caption)
+                                    .font(.system(.caption, design: .monospaced))
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
@@ -581,7 +581,7 @@ private struct NotebookMarketplaceSheet: View {
                     .font(.system(size: 48))
                     .foregroundColor(.accentColor)
                 Text("Marketplace coming soon")
-                    .font(.title3.bold())
+                    .font(.system(.title3, design: .monospaced).bold())
                 Text("We’re curating templates and covers you can drop directly into your notebooks.")
                     .multilineTextAlignment(.center)
                     .foregroundColor(.secondary)
@@ -621,7 +621,7 @@ private struct LibraryIconButton: View {
 
                 if let badge, badge > 0 {
                     Text("\(min(badge, 99))")
-                        .font(.caption2.bold())
+                        .font(.system(.caption2, design: .monospaced).bold())
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background(Color.red, in: Capsule())

@@ -73,7 +73,7 @@ struct VoiceRecordingHistorySheet: View {
             Text("No recordings yet")
                 .font(.title3.weight(.semibold))
             Text("Tap the mic button to capture your first voice note.")
-                .font(.subheadline)
+                .font(.system(.subheadline, design: .monospaced))
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -103,7 +103,7 @@ struct VoiceRecordingHistorySheet: View {
                         .onSubmit { commitRename(for: recording) }
                 } else {
                     Text(recording.title)
-                        .font(.headline)
+                        .font(.system(.headline, design: .monospaced))
                         .lineLimit(2)
                 }
 
@@ -259,7 +259,7 @@ private struct RecordingTranscriptSheet: View {
                         }
                         if let rewriteError {
                             Text(rewriteError)
-                                .font(.caption)
+                                .font(.system(.caption, design: .monospaced))
                                 .foregroundColor(.red)
                         }
                     } else {
@@ -287,11 +287,11 @@ private struct RecordingTranscriptSheet: View {
                 .font(.title3.weight(.semibold))
             if let label = labelForPage(recording.pageID) {
                 Text(label)
-                    .font(.subheadline)
+                    .font(.system(.subheadline, design: .monospaced))
                     .foregroundColor(.secondary)
             }
             Text("Duration \(formattedDuration(recording.duration)) • \(formattedDate(recording.createdAt))")
-                .font(.caption)
+                .font(.system(.caption, design: .monospaced))
                 .foregroundColor(.secondary)
         }
     }
@@ -300,7 +300,7 @@ private struct RecordingTranscriptSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Text("Transcript")
-                    .font(.headline)
+                    .font(.system(.headline, design: .monospaced))
                 Spacer()
                 if recorder.transcribingRecordingID == recording.id {
                     ProgressView()
@@ -321,7 +321,7 @@ private struct RecordingTranscriptSheet: View {
             if let transcript = recording.transcript, !transcript.isEmpty {
                 ScrollView {
                     Text(transcript)
-                        .font(.body)
+                        .font(.system(.body, design: .monospaced))
                         .textSelection(.enabled)
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -345,14 +345,14 @@ private struct RecordingTranscriptSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("AI Rewrite")
-                    .font(.headline)
+                    .font(.system(.headline, design: .monospaced))
                 Spacer()
                 if isRewriting {
                     ProgressView()
                 }
             }
             Text("Generate polished notes from this transcript.")
-                .font(.subheadline)
+                .font(.system(.subheadline, design: .monospaced))
                 .foregroundColor(.secondary)
             Button(action: { rewriteTranscript(recording) }) {
                 Label("Rewrite with AI", systemImage: "sparkles")
@@ -367,7 +367,7 @@ private struct RecordingTranscriptSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Text("AI Notes")
-                    .font(.headline)
+                    .font(.system(.headline, design: .monospaced))
                 Spacer()
                 Button(action: { copySummary(summary) }) {
                     Image(systemName: "doc.on.doc")
@@ -380,7 +380,7 @@ private struct RecordingTranscriptSheet: View {
             }
             ScrollView {
                 Text(summary)
-                    .font(.body)
+                    .font(.system(.body, design: .monospaced))
                     .textSelection(.enabled)
                     .lineSpacing(4)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -457,7 +457,7 @@ Voice note:
             NavigationStack {
                 ScrollView {
                     Text(item.body)
-                        .font(.body)
+                        .font(.system(.body, design: .monospaced))
                         .textSelection(.enabled)
                         .lineSpacing(4)
                         .padding()

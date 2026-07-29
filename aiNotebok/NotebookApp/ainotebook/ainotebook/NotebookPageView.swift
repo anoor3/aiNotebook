@@ -141,7 +141,7 @@ struct NotebookPageView: View {
 
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 0) {
+                            LazyVStack(spacing: 2) {
                                 coverPage(pageSize: pageSize,
                                           viewportHeight: viewportHeight,
                                           isZoomedOut: isZoomedOut)

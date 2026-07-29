@@ -30,8 +30,6 @@ struct PencilCanvasView: UIViewRepresentable {
             paperStyle: paperStyle,
             paperColor: paperColor
         )
-        // Disable per-page zoom - document zoom is handled at the ScrollView level
-        host.disablePerPageZoom()
         context.coordinator.attach(hostView: host)
         updateOverlay(in: host)
         return host
@@ -46,26 +44,34 @@ struct PencilCanvasView: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(controller: controller)
+        Coordinator(controller: controller, sharedZoomScale: sharedZoomScale)
     }
 
-    final class Coordinator: NSObject, PKCanvasViewDelegate {
+    final class Coordinator: NSObject, PKCanvasViewDelegate, UIScrollViewDelegate {
         private let controller: CanvasController
         private weak var hostView: ZoomableCanvasHostView?
         private var observingGesture = false
         private var lastTool: CanvasDrawingTool
+        private let sharedZoomScale: Binding<CGFloat>?
 
-        init(controller: CanvasController) {
+        init(controller: CanvasController, sharedZoomScale: Binding<CGFloat>?) {
             self.controller = controller
             self.lastTool = controller.tool
+            self.sharedZoomScale = sharedZoomScale
         }
 
         func attach(hostView: ZoomableCanvasHostView) {
             self.hostView = hostView
+            hostView.setScrollDelegate(self)
 
             // ensure initial render is crisp
             hostView.updateInk(with: controller.canvasView.drawing)
             handleToolChange(newTool: controller.tool)
+            if let sharedZoomScale {
+                hostView.resetZoom(animated: false)
+                hostView.applyZoomScale(sharedZoomScale.wrappedValue, animated: false)
+                controller.zoomScale = sharedZoomScale.wrappedValue
+            }
 
             if !observingGesture {
                 controller.canvasView.drawingGestureRecognizer.addTarget(
@@ -83,6 +89,47 @@ struct PencilCanvasView: UIViewRepresentable {
                 hostView?.finishEraserOverlay()
             }
             controller.publishDrawingChange()
+        }
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+            hostView?.zoomableContentView
+        }
+
+        func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+            hostView?.prepareForZoomInteraction()
+        }
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            let minimum = scrollView.minimumZoomScale
+            let z = max(scrollView.zoomScale, minimum)
+            hostView?.updateZoomScale(z)
+            hostView?.setNeedsGridRedraw()
+            hostView?.updateVisibleInkTiles()
+            controller.zoomScale = z
+            DispatchQueue.main.async { [weak self] in
+                self?.sharedZoomScale?.wrappedValue = z
+            }
+        }
+
+        func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+            let minScale = scrollView.minimumZoomScale
+            let maxScale = scrollView.maximumZoomScale
+            let clampedScale = min(max(scale, minScale), maxScale)
+
+            if abs(clampedScale - scrollView.zoomScale) > 0.001 {
+                scrollView.setZoomScale(clampedScale, animated: true)
+            }
+
+            hostView?.updateZoomScale(clampedScale)
+            hostView?.updateVisibleInkTiles()
+            controller.zoomScale = clampedScale
+            DispatchQueue.main.async { [weak self] in
+                self?.sharedZoomScale?.wrappedValue = clampedScale
+            }
+        }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            hostView?.updateVisibleInkTiles()
         }
 
         func handleToolChange(newTool: CanvasDrawingTool) {
@@ -108,6 +155,9 @@ struct PencilCanvasView: UIViewRepresentable {
             guard let host = hostView, controller.tool == .eraser else { return }
             let point = gesture.location(in: host.eraserCoordinateSpace)
 
+            // IMPORTANT:
+            // Width should scale visually with zoom, otherwise it looks wrong.
+            // But DO NOT multiply by insane values — just proportional to zoom.
             let width = controller.strokeWidth * max(1.0, host.currentZoomScaleFactor)
 
             switch gesture.state {
@@ -210,15 +260,6 @@ final class ZoomableCanvasHostView: UIView {
 
     func setScrollDelegate(_ delegate: UIScrollViewDelegate) {
         scrollView.delegate = delegate
-    }
-
-    /// Disables per-page zoom so the document-level pinch gesture controls zoom for all pages together.
-    func disablePerPageZoom() {
-        scrollView.minimumZoomScale = 1.0
-        scrollView.maximumZoomScale = 1.0
-        scrollView.bouncesZoom = false
-        scrollView.pinchGestureRecognizer?.isEnabled = false
-        scrollView.isScrollEnabled = false
     }
 
     func resetZoom(animated: Bool) {
@@ -380,19 +421,19 @@ final class ZoomableCanvasHostView: UIView {
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.minimumZoomScale = 1.0
-        scrollView.maximumZoomScale = 1.0
-        scrollView.bouncesZoom = false
+        scrollView.maximumZoomScale = 3.0
+        scrollView.bouncesZoom = true
         scrollView.isMultipleTouchEnabled = true
         scrollView.backgroundColor = .clear
         scrollView.showsVerticalScrollIndicator = false
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.delaysContentTouches = false
         scrollView.canCancelContentTouches = true
-        scrollView.pinchGestureRecognizer?.isEnabled = false
+        scrollView.pinchGestureRecognizer?.requiresExclusiveTouchType = false
         scrollView.panGestureRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        scrollView.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         scrollView.panGestureRecognizer.minimumNumberOfTouches = 2
         scrollView.contentInsetAdjustmentBehavior = .never
-        scrollView.isScrollEnabled = false
 
         addSubview(scrollView)
         scrollView.addSubview(contentView)

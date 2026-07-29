@@ -90,7 +90,6 @@ struct NotebookPageView: View {
     @State private var shapeAttachmentKinds: [UUID: ShapeTemplate.Kind] = [:]
     @State private var pasteboardHasImage = UIPasteboard.general.hasImages
     @State private var sharedZoomScale: CGFloat = 1.0
-    @State private var pinchBaseScale: CGFloat = 1.0
 
     private var workspaceBackground: Color {
         switch pageColor {
@@ -127,8 +126,7 @@ struct NotebookPageView: View {
     var body: some View {
         GeometryReader { geometry in
             let pageSize = basePageSize
-            let fitScale = self.pageScale(for: geometry.size.width)
-            let pageScale = fitScale * sharedZoomScale
+            let pageScale = self.pageScale(for: geometry.size.width)
             let scaledHeight = pageSize.height * pageScale
             let viewportHeight = max(min(scaledHeight + 60, geometry.size.height - 80), 420)
             let isZoomedOut = sharedZoomScale < 0.85
@@ -143,7 +141,7 @@ struct NotebookPageView: View {
 
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 0) {
+                            LazyVStack(spacing: 8) {
                                 coverPage(pageSize: pageSize,
                                           viewportHeight: viewportHeight,
                                           isZoomedOut: isZoomedOut)
@@ -155,10 +153,6 @@ struct NotebookPageView: View {
                                     .id(coverPageID)
 
                                 ForEach(pageStore.pages, id: \.id) { controller in
-                                    Rectangle()
-                                        .fill(Color.black.opacity(0.6))
-                                        .frame(height: 2)
-
                                     notebookPage(for: controller,
                                                  pageSize: pageSize,
                                                  viewportHeight: viewportHeight,
@@ -178,12 +172,6 @@ struct NotebookPageView: View {
                         }
                         .coordinateSpace(name: scrollSpaceName)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .overlay {
-                            // UIKit pinch gesture overlay for unified document zoom.
-                            // Installs a UIPinchGestureRecognizer on the parent UIScrollView.
-                            DocumentPinchOverlay(zoomScale: $sharedZoomScale,
-                                                 pinchBaseScale: $pinchBaseScale)
-                        }
                         .onAppear {
                             scrollProxy = proxy
                             scrollToActivePage(animated: false)
@@ -691,6 +679,7 @@ struct NotebookPageView: View {
                                            paperStyle: paperStyle,
                                            paperColor: pageColor,
                                            attachments: attachments,
+                                           sharedZoomScale: $sharedZoomScale,
                                            editingAttachmentID: binding,
                                            onAttachmentChanged: { updated in
                                                handleAttachmentUpdate(updated, for: pageID)

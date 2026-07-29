@@ -474,6 +474,7 @@ final class ZoomableCanvasHostView: UIView {
         gridView.layer.cornerRadius = 32
         gridView.layer.masksToBounds = true
         gridView.paperStyle = paperStyle
+        gridView.paperColor = paperColor
 
         inkView.isUserInteractionEnabled = false
 
@@ -513,6 +514,8 @@ final class ZoomableCanvasHostView: UIView {
         let uiColor = paperColor.uiColor
         contentView.backgroundColor = uiColor
         backgroundView.updateColor(uiColor)
+        gridView.paperColor = paperColor
+        gridView.setNeedsDisplay()
     }
 
     private func updatePageSizeConstraints() {
@@ -625,7 +628,16 @@ final class PageBackgroundView: UIView {
 
 final class GridPaperCanvasView: UIView {
     var paperStyle: PaperStyle = .grid
-    private let gridColor = UIColor(red: 178/255, green: 172/255, blue: 156/255, alpha: 0.85)
+    var paperColor: PaperColor = .classic
+
+    private var gridColor: UIColor {
+        switch paperColor {
+        case .classic:
+            return UIColor(red: 0x98/255, green: 0x96/255, blue: 0x87/255, alpha: 1.0)
+        case .white:
+            return UIColor(red: 0x9A/255, green: 0x98/255, blue: 0x89/255, alpha: 1.0)
+        }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)

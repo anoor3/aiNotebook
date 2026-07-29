@@ -152,9 +152,9 @@ enum NotebookExportService {
         let gridColor: UIColor
         switch color {
         case .classic:
-            gridColor = UIColor(red: 178/255, green: 172/255, blue: 156/255, alpha: 0.85)
+            gridColor = UIColor(red: 0x98/255, green: 0x96/255, blue: 0x87/255, alpha: 1.0)
         case .white:
-            gridColor = UIColor(red: 190/255, green: 190/255, blue: 180/255, alpha: 0.75)
+            gridColor = UIColor(red: 0x9A/255, green: 0x98/255, blue: 0x89/255, alpha: 1.0)
         }
         context.saveGState()
         context.setAllowsAntialiasing(true)

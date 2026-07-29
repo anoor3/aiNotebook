@@ -9,7 +9,11 @@ struct LibraryRootView: View {
     @State private var hasRestoredSession = false
     @State private var showingTrash = false
     @State private var showingMarketplace = false
-    @State private var prefersDarkMode = ThemePreference.load()
+    @State private var showingThemePicker = false
+    @State private var currentThemeID: LibraryThemeID = LibraryThemePreference.load()
+    @State private var prefersDarkMode: Bool = UserDefaults.standard.bool(forKey: "NotebookDarkModePreference")
+
+    private var theme: LibraryTheme { currentThemeID.theme }
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -21,9 +25,11 @@ struct LibraryRootView: View {
                         onFavoriteToggle: toggleFavorite,
                         onOpenTrash: { showingTrash = true },
                         onOpenMarketplace: { showingMarketplace = true },
+                        onOpenThemePicker: { showingThemePicker = true },
+                        onToggleDarkMode: toggleDarkMode,
                         trashCount: trashedNotebooks.count,
-                        prefersDarkMode: prefersDarkMode,
-                        onToggleDarkMode: toggleTheme)
+                        themeID: currentThemeID,
+                        prefersDarkMode: prefersDarkMode)
                 .navigationDestination(for: Notebook.ID.self) { id in
                     if let binding = binding(for: id) {
                         NotebookContainerView(notebook: binding)
@@ -50,6 +56,9 @@ struct LibraryRootView: View {
         .sheet(isPresented: $showingMarketplace) {
             NotebookMarketplaceSheet(onDismiss: { showingMarketplace = false })
         }
+        .sheet(isPresented: $showingThemePicker) {
+            ThemePickerSheet(currentThemeID: $currentThemeID, onDismiss: { showingThemePicker = false })
+        }
         .sheet(item: Binding<RenameSession?>(
             get: { renameNotebookID.map(RenameSession.init) },
             set: { renameNotebookID = $0?.id }
@@ -69,11 +78,14 @@ struct LibraryRootView: View {
             NotebookLibraryPersistence.save(updated)
         }
         .preferredColorScheme(navigationPath.isEmpty ? (prefersDarkMode ? .dark : .light) : nil)
+        .onChange(of: currentThemeID) { newID in
+            LibraryThemePreference.save(newID)
+        }
     }
 
-    private func toggleTheme() {
+    private func toggleDarkMode() {
         prefersDarkMode.toggle()
-        ThemePreference.save(prefersDarkMode)
+        UserDefaults.standard.set(prefersDarkMode, forKey: "NotebookDarkModePreference")
     }
 
     private func binding(for id: Notebook.ID) -> Binding<Notebook>? {
@@ -168,36 +180,25 @@ struct LibraryView: View {
     var onFavoriteToggle: (Notebook) -> Void
     var onOpenTrash: () -> Void
     var onOpenMarketplace: () -> Void
-    var trashCount: Int
-    var prefersDarkMode: Bool
+    var onOpenThemePicker: () -> Void
     var onToggleDarkMode: () -> Void
+    var trashCount: Int
+    var themeID: LibraryThemeID
+    var prefersDarkMode: Bool
 
+    private var theme: LibraryTheme { themeID.theme }
     private let gridItems = Array(repeating: GridItem(.flexible(), spacing: 18), count: 3)
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack(spacing: 12) {
-                    Text("Library")
-                        .font(.system(size: 34, weight: .bold))
-                    Spacer()
-                    LibraryIconButton(systemName: prefersDarkMode ? "sun.max" : "moon",
-                                      label: "Toggle theme",
-                                      action: onToggleDarkMode)
-                    LibraryIconButton(systemName: "bag",
-                                      label: "Marketplace",
-                                      action: onOpenMarketplace)
-                    LibraryIconButton(systemName: "trash",
-                                      label: "Trash",
-                                      badge: trashCount,
-                                      action: onOpenTrash)
-                }
+                headerView
 
                 LazyVGrid(columns: gridItems, spacing: 18) {
-                    NewNotebookCard(action: onNewNotebook)
+                    ThemedNewNotebookCard(theme: theme, prefersDarkMode: prefersDarkMode, action: onNewNotebook)
 
                     ForEach(notebooks) { notebook in
-                        NotebookCardView(notebook: notebook)
+                        ThemedNotebookCard(notebook: notebook, theme: theme)
                             .onTapGesture { onOpen(notebook) }
                             .contextMenu {
                                 Button("Rename", action: { onRenameRequest(notebook) })
@@ -211,69 +212,157 @@ struct LibraryView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 28)
         }
+        .background(themeBackground.ignoresSafeArea())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }
-}
 
-struct NotebookCardView: View {
-    let notebook: Notebook
+    private var themeBackground: Color {
+        if themeID == .retroDark {
+            return prefersDarkMode ? Color(red: 0.08, green: 0.08, blue: 0.08) : Color(red: 0.96, green: 0.96, blue: 0.94)
+        }
+        return theme.backgroundColor
+    }
 
-    var body: some View {
-        NotebookCardCover(notebook: notebook)
-            .frame(height: 190)
+    @ViewBuilder
+    private var headerView: some View {
+        switch theme.headerButtonStyle {
+        case .circleIcon:
+            HStack(spacing: 12) {
+                Text("Library")
+                    .font(theme.headerTitleFont)
+                Spacer()
+                LibraryIconButton(systemName: prefersDarkMode ? "sun.max" : "moon", label: "Toggle mode", action: onToggleDarkMode)
+                LibraryIconButton(systemName: "bag", label: "Marketplace", action: onOpenMarketplace)
+                LibraryIconButton(systemName: "paintpalette", label: "Theme", action: onOpenThemePicker)
+                LibraryIconButton(systemName: "trash", label: "Trash", badge: trashCount, action: onOpenTrash)
+            }
+        case .pillLabel:
+            HStack(spacing: 12) {
+                Text("Library")
+                    .font(theme.headerTitleFont)
+                    .foregroundColor(prefersDarkMode ? .white : .black)
+                Spacer()
+                Button(action: onToggleDarkMode) {
+                    Image(systemName: prefersDarkMode ? "sun.max" : "moon")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(prefersDarkMode ? .white : .black)
+                        .frame(width: 36, height: 36)
+                        .background((prefersDarkMode ? Color.white : Color.black).opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
+                RetroPillButton(icon: "house.fill", label: "Marketplace", darkMode: prefersDarkMode, action: onOpenMarketplace)
+                RetroPillButton(icon: "paintpalette.fill", label: "Theme", darkMode: prefersDarkMode, action: onOpenThemePicker)
+                RetroPillButton(icon: "trash.fill", label: "Trash", darkMode: prefersDarkMode, action: onOpenTrash)
+            }
+        }
     }
 }
 
-private struct NotebookCardCover: View {
+// MARK: - Themed Notebook Card
+
+private struct ThemedNotebookCard: View {
     let notebook: Notebook
+    let theme: LibraryTheme
 
     var body: some View {
+        if theme.cardUsesGradientCover {
+            classicCard
+        } else {
+            retroCard
+        }
+    }
+
+    private var classicCard: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: theme.cardCornerRadius, style: .continuous)
                 .fill(LinearGradient(colors: [notebook.coverColor.opacity(0.95),
                                               notebook.coverColor.opacity(0.65)],
                                      startPoint: .topLeading,
                                      endPoint: .bottomTrailing))
-                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 4)
+                .shadow(color: theme.cardShadowColor, radius: theme.cardShadowRadius, x: 0, y: 4)
 
             VStack(spacing: 16) {
                 if notebook.isFavorite {
-                    Image(systemName: "star.fill")
-                        .foregroundColor(.white.opacity(0.9))
+                    Image(systemName: theme.favoriteIcon)
+                        .foregroundColor(theme.favoriteColor)
                         .font(.title3)
                 }
-
                 Spacer()
-
                 Text(notebook.title)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(theme.cardTitleFont)
                     .multilineTextAlignment(.center)
-                    .foregroundColor(.white)
+                    .foregroundColor(theme.cardTitleColor ?? .white)
                     .padding(.horizontal, 12)
-
                 Spacer()
-
                 HStack {
                     Text("\(notebook.pages.count) pages")
                     Spacer()
-                    Text(formatted(date: notebook.lastOpened))
+                    Text(shortDate(notebook.lastOpened))
                 }
-                .font(.caption.bold())
-                .foregroundColor(.white.opacity(0.92))
+                .font(theme.cardMetaFont)
+                .foregroundColor(theme.cardMetaColor)
             }
             .padding(24)
         }
+        .frame(height: 190)
     }
 
-    private func formatted(date: Date) -> String {
+    private var retroCard: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: theme.cardCornerRadius, style: .continuous)
+                .fill(LinearGradient(colors: [notebook.coverColor.opacity(0.95),
+                                              notebook.coverColor.opacity(0.65)],
+                                     startPoint: .topLeading,
+                                     endPoint: .bottomTrailing))
+                .shadow(color: theme.cardShadowColor, radius: theme.cardShadowRadius, x: 0, y: 4)
+
+            // Unique decorative pattern per notebook (stable across launches)
+            NotebookPatternOverlay(patternIndex: notebook.title.count + notebook.pages.count)
+                .opacity(0.1)
+                .clipShape(RoundedRectangle(cornerRadius: theme.cardCornerRadius, style: .continuous))
+
+            VStack(spacing: 16) {
+                if notebook.isFavorite {
+                    Image(systemName: theme.favoriteIcon)
+                        .foregroundColor(.white.opacity(0.9))
+                        .font(.title3)
+                }
+                Spacer()
+                Text(notebook.title)
+                    .font(theme.cardTitleFont)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                Spacer()
+                HStack {
+                    Text("\(notebook.pages.count) pages")
+                    Spacer()
+                    Text(shortDate(notebook.lastOpened))
+                    if notebook.isFavorite {
+                        Text("★")
+                    }
+                }
+                .font(theme.cardMetaFont)
+                .foregroundColor(.white.opacity(0.9))
+            }
+            .padding(24)
+        }
+        .frame(height: 190)
+    }
+
+    private func shortDate(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateStyle = .short
+        formatter.dateFormat = "M/dd/yy"
         return formatter.string(from: date)
     }
 }
 
-struct NewNotebookCard: View {
+// MARK: - Themed New Notebook Card
+
+private struct ThemedNewNotebookCard: View {
+    let theme: LibraryTheme
+    var prefersDarkMode: Bool = true
     let action: () -> Void
 
     var body: some View {
@@ -281,14 +370,204 @@ struct NewNotebookCard: View {
             VStack(spacing: 12) {
                 Image(systemName: "plus")
                     .font(.system(size: 30, weight: .semibold))
+                    .foregroundColor(prefersDarkMode ? theme.newCardIconColor : .black)
                 Text("New Notebook")
-                    .font(.subheadline)
+                    .font(theme.cardMetaFont)
+                    .foregroundColor(prefersDarkMode ? theme.newCardTextColor : .black)
             }
-            .frame(maxWidth: .infinity)
-            .padding(32)
-            .background(RoundedRectangle(cornerRadius: 20).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6])))
+            .frame(maxWidth: .infinity, minHeight: 190)
+            .background(
+                RoundedRectangle(cornerRadius: theme.cardCornerRadius, style: .continuous)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [8]))
+                    .foregroundColor(prefersDarkMode ? theme.newCardBorderColor : Color.black.opacity(0.4))
+            )
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Notebook Pattern Overlay
+
+private struct NotebookPatternOverlay: View {
+    let patternIndex: Int
+
+    var body: some View {
+        Canvas { context, size in
+            switch patternIndex % 6 {
+            case 0: drawCircles(context: context, size: size)
+            case 1: drawDiagonalLines(context: context, size: size)
+            case 2: drawDots(context: context, size: size)
+            case 3: drawCrosshatch(context: context, size: size)
+            case 4: drawWaves(context: context, size: size)
+            default: drawDiamonds(context: context, size: size)
+            }
+        }
+    }
+
+    private func drawCircles(context: GraphicsContext, size: CGSize) {
+        let step: CGFloat = 44
+        for x in stride(from: step, through: size.width, by: step) {
+            for y in stride(from: step, through: size.height, by: step) {
+                let rect = CGRect(x: x - 10, y: y - 10, width: 20, height: 20)
+                context.stroke(Path(ellipseIn: rect), with: .color(.white), lineWidth: 1.2)
+            }
+        }
+    }
+
+    private func drawDiagonalLines(context: GraphicsContext, size: CGSize) {
+        let step: CGFloat = 24
+        for offset in stride(from: -size.height, through: size.width + size.height, by: step) {
+            var path = Path()
+            path.move(to: CGPoint(x: offset, y: 0))
+            path.addLine(to: CGPoint(x: offset - size.height, y: size.height))
+            context.stroke(path, with: .color(.white), lineWidth: 1)
+        }
+    }
+
+    private func drawDots(context: GraphicsContext, size: CGSize) {
+        let step: CGFloat = 28
+        for x in stride(from: step / 2, through: size.width, by: step) {
+            for y in stride(from: step / 2, through: size.height, by: step) {
+                let rect = CGRect(x: x - 2.5, y: y - 2.5, width: 5, height: 5)
+                context.fill(Path(ellipseIn: rect), with: .color(.white))
+            }
+        }
+    }
+
+    private func drawCrosshatch(context: GraphicsContext, size: CGSize) {
+        let step: CGFloat = 32
+        for offset in stride(from: -size.height, through: size.width + size.height, by: step) {
+            var p1 = Path()
+            p1.move(to: CGPoint(x: offset, y: 0))
+            p1.addLine(to: CGPoint(x: offset - size.height, y: size.height))
+            context.stroke(p1, with: .color(.white), lineWidth: 0.7)
+            var p2 = Path()
+            p2.move(to: CGPoint(x: offset, y: 0))
+            p2.addLine(to: CGPoint(x: offset + size.height, y: size.height))
+            context.stroke(p2, with: .color(.white), lineWidth: 0.7)
+        }
+    }
+
+    private func drawWaves(context: GraphicsContext, size: CGSize) {
+        let step: CGFloat = 34
+        for y in stride(from: step, through: size.height, by: step) {
+            var path = Path()
+            path.move(to: CGPoint(x: 0, y: y))
+            for x in stride(from: 0, through: size.width, by: 10) {
+                let yOff = sin(x / 20) * 6
+                path.addLine(to: CGPoint(x: x, y: y + yOff))
+            }
+            context.stroke(path, with: .color(.white), lineWidth: 1)
+        }
+    }
+
+    private func drawDiamonds(context: GraphicsContext, size: CGSize) {
+        let step: CGFloat = 40
+        for x in stride(from: step, through: size.width, by: step) {
+            for y in stride(from: step, through: size.height, by: step) {
+                var path = Path()
+                path.move(to: CGPoint(x: x, y: y - 8))
+                path.addLine(to: CGPoint(x: x + 8, y: y))
+                path.addLine(to: CGPoint(x: x, y: y + 8))
+                path.addLine(to: CGPoint(x: x - 8, y: y))
+                path.closeSubpath()
+                context.stroke(path, with: .color(.white), lineWidth: 0.8)
+            }
+        }
+    }
+}
+
+// MARK: - Retro Pill Button
+
+private struct RetroPillButton: View {
+    let icon: String
+    let label: String
+    var darkMode: Bool = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                Text(label)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+            }
+            .foregroundColor(darkMode ? .white : .black)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                (darkMode ? Color(red: 0.18, green: 0.18, blue: 0.18) : Color(red: 0.88, green: 0.88, blue: 0.86)),
+                in: Capsule()
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Theme Picker Sheet
+
+private struct ThemePickerSheet: View {
+    @Binding var currentThemeID: LibraryThemeID
+    var onDismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                ForEach(LibraryThemeID.allCases) { themeOption in
+                    Button {
+                        currentThemeID = themeOption
+                        LibraryThemePreference.save(themeOption)
+                    } label: {
+                        HStack(spacing: 16) {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(themeOption.theme.backgroundColor)
+                                .frame(width: 60, height: 60)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(themeOption.theme.cardBackground)
+                                        .frame(width: 30, height: 30)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                )
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(themeOption.displayName)
+                                    .font(.headline)
+                                Text(themeOption == .classic ? "Light background, colorful covers" : "Dark background, monospace, retro style")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+
+                            if themeOption == currentThemeID {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.accentColor)
+                                    .font(.title3)
+                            }
+                        }
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(themeOption == currentThemeID ? Color.accentColor.opacity(0.08) : Color(.tertiarySystemFill))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+            }
+            .padding(24)
+            .navigationTitle("Choose Theme")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done", action: onDismiss)
+                }
+            }
+        }
     }
 }
 
@@ -394,17 +673,7 @@ private struct NotebookMarketplaceSheet: View {
     }
 }
 
-private enum ThemePreference {
-    private static let key = "NotebookThemePreference"
-
-    static func load() -> Bool {
-        UserDefaults.standard.bool(forKey: key)
-    }
-
-    static func save(_ isDark: Bool) {
-        UserDefaults.standard.set(isDark, forKey: key)
-    }
-}
+// Theme persistence is now in LibraryTheme.swift (LibraryThemePreference)
 
 private struct LibraryIconButton: View {
     var systemName: String

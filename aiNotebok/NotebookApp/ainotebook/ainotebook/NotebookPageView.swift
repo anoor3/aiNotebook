@@ -141,7 +141,7 @@ struct NotebookPageView: View {
 
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: isZoomedOut ? 4 : 40) {
+                            LazyVStack(spacing: 0) {
                                 coverPage(pageSize: pageSize,
                                           viewportHeight: viewportHeight,
                                           isZoomedOut: isZoomedOut)
@@ -167,7 +167,7 @@ struct NotebookPageView: View {
                                         requestAdditionalPage()
                                     }
                             }
-                            .padding(.vertical, isZoomedOut ? 8 : 40)
+                            .padding(.vertical, 0)
                             .frame(maxWidth: .infinity)
                         }
                         .coordinateSpace(name: scrollSpaceName)
@@ -178,7 +178,7 @@ struct NotebookPageView: View {
                         }
                     }
                 }
-                .padding(.horizontal, isZoomedOut ? 4 : 12)
+                .padding(.horizontal, 0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .onPreferenceChange(PageVisibilityPreferenceKey.self) { values in
                     guard let closest = values.min(by: { $0.value < $1.value }) else { return }
@@ -723,10 +723,6 @@ struct NotebookPageView: View {
             .frame(width: pageSize.width * pageScale,
                    height: pageSize.height * pageScale,
                    alignment: .center)
-            .shadow(color: isZoomedOut ? Color.clear : Color.black.opacity(0.08),
-                    radius: isZoomedOut ? 0 : 18,
-                    y: isZoomedOut ? 0 : 8)
-            .padding(.horizontal, isZoomedOut ? 0 : 4)
             .background(
                 GeometryReader { proxy in
                     Color.clear.preference(key: PageVisibilityPreferenceKey.self,

@@ -127,7 +127,8 @@ struct NotebookPageView: View {
     var body: some View {
         GeometryReader { geometry in
             let pageSize = basePageSize
-            let pageScale = self.pageScale(for: geometry.size.width)
+            let fitScale = self.pageScale(for: geometry.size.width)
+            let pageScale = fitScale * sharedZoomScale
             let scaledHeight = pageSize.height * pageScale
             let viewportHeight = max(min(scaledHeight + 60, geometry.size.height - 80), 420)
             let isZoomedOut = sharedZoomScale < 0.85
@@ -177,6 +178,12 @@ struct NotebookPageView: View {
                         }
                         .coordinateSpace(name: scrollSpaceName)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .overlay {
+                            // UIKit pinch gesture overlay for unified document zoom.
+                            // Installs a UIPinchGestureRecognizer on the parent UIScrollView.
+                            DocumentPinchOverlay(zoomScale: $sharedZoomScale,
+                                                 pinchBaseScale: $pinchBaseScale)
+                        }
                         .onAppear {
                             scrollProxy = proxy
                             scrollToActivePage(animated: false)
@@ -684,7 +691,6 @@ struct NotebookPageView: View {
                                            paperStyle: paperStyle,
                                            paperColor: pageColor,
                                            attachments: attachments,
-                                           sharedZoomScale: $sharedZoomScale,
                                            editingAttachmentID: binding,
                                            onAttachmentChanged: { updated in
                                                handleAttachmentUpdate(updated, for: pageID)

@@ -1472,52 +1472,60 @@ private struct AIChatSheet: View {
     @State private var draftMessage: String = ""
     @State private var isSending = false
     @State private var errorMessage: String?
+    @FocusState private var isInputFocused: Bool
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 0) {
             header
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 12)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Picker("Query Mode", selection: $queryMode) {
-                    ForEach(AIQueryMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                if messages.count <= 1 {
-                    Text(queryMode.subtitle)
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-
-                    modeAccessory
-                }
-            }
+            Divider().opacity(0.3)
 
             chatStream
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                    Text(errorMessage)
+                        .font(.caption)
+                        .lineLimit(2)
+                }
+                .foregroundColor(.red)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
             }
 
+            Divider().opacity(0.3)
+
             inputField
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
         }
-        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color(.systemBackground))
+                .shadow(color: .black.opacity(0.15), radius: 20, x: -5, y: 0)
+        )
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Notebook AI")
-                    .font(.title2.weight(.bold))
-                Text("Ask questions about this page or attach context")
-                    .font(.subheadline)
+        HStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.title3)
+                .foregroundStyle(
+                    LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("AI Assistant")
+                    .font(.headline)
+                Text("Ask anything about your notes")
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
 
@@ -1529,107 +1537,63 @@ private struct AIChatSheet: View {
                     errorMessage = nil
                     onNewChat()
                 }) {
-                    Text("New Chat")
-                        .font(.footnote.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.accentColor.opacity(0.15))
-                        .clipShape(Capsule())
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.caption.weight(.semibold))
+                        Text("New Chat")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundColor(.accentColor)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color.accentColor.opacity(0.12), in: Capsule())
                 }
                 .buttonStyle(.plain)
             }
 
             Button(action: onClose) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title2)
+                Image(systemName: "xmark")
+                    .font(.subheadline.weight(.medium))
                     .foregroundColor(.secondary)
+                    .padding(8)
+                    .background(Color(.tertiarySystemFill), in: Circle())
             }
-        }
-    }
-
-    @ViewBuilder
-    private var modeAccessory: some View {
-        switch queryMode {
-        case .text:
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.accentColor.opacity(0.08))
-                .overlay(
-                    HStack {
-                        Image(systemName: "pencil.and.outline")
-                            .foregroundColor(.accentColor)
-                        Text("Use natural language to describe ideas, questions, or todo items.")
-                            .font(.callout)
-                            .foregroundColor(.primary)
-                        Spacer()
-                    }
-                    .padding()
-                )
-                .frame(maxWidth: .infinity)
-        case .selection:
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(style: StrokeStyle(lineWidth: 2, dash: [8]))
-                .foregroundColor(.accentColor)
-                .overlay(
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Coming soon: drag a box around strokes to ask about that region.", systemImage: "lasso.sparkles")
-                            .foregroundColor(.accentColor)
-                        Text("For now, describe the area you want feedback on in the text box below.")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                )
-        case .image:
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(.tertiarySystemFill))
-                .overlay(
-                    VStack(spacing: 10) {
-                        Image(systemName: "photo.badge.plus")
-                            .font(.title2)
-                            .foregroundColor(.accentColor)
-                        Text("Image uploads will be available soon. Mention the picture you want me to analyze in your prompt.")
-                            .multilineTextAlignment(.center)
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                )
+            .buttonStyle(.plain)
         }
     }
 
     private var chatStream: some View {
         Group {
             if messages.count <= 1 {
-                VStack(spacing: 16) {
-                    Image(systemName: "text.magnifyingglass")
-                        .font(.system(size: 34))
-                        .foregroundColor(.accentColor.opacity(0.75))
-                    Text("Use natural language to describe ideas, questions, or TODOs.")
-                        .font(.callout)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
+                VStack(spacing: 20) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 40))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.blue.opacity(0.6), .purple.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                    VStack(spacing: 6) {
+                        Text("Start a conversation")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Ask questions, brainstorm ideas, or get help with your notes.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .padding(40)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(spacing: 12) {
+                        LazyVStack(spacing: 16) {
                             ForEach(messages) { message in
                                 AIChatBubble(message: message)
                                     .id(message.id)
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 16)
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 16)
                     }
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onAppear {
                         DispatchQueue.main.async {
                             if let last = messages.last?.id {
@@ -1638,7 +1602,7 @@ private struct AIChatSheet: View {
                         }
                     }
                     .onChange(of: messages) { _ in
-                        withAnimation(.easeOut(duration: 0.25)) {
+                        withAnimation(.easeOut(duration: 0.2)) {
                             if let last = messages.last?.id {
                                 proxy.scrollTo(last, anchor: .bottom)
                             }
@@ -1650,24 +1614,39 @@ private struct AIChatSheet: View {
     }
 
     private var inputField: some View {
-        HStack(spacing: 12) {
-            TextField("Ask something...", text: $draftMessage, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(1...3)
+        HStack(alignment: .bottom, spacing: 10) {
+            TextField("Message...", text: $draftMessage, axis: .vertical)
+                .lineLimit(1...5)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .focused($isInputFocused)
                 .disabled(isSending)
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        isInputFocused = true
+                    }
+                }
 
             Button(action: sendMessage) {
-                if isSending {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .padding(10)
-                        .background(Capsule().fill(Color.accentColor))
-                } else {
-                    Image(systemName: "paperplane.fill")
-                        .foregroundColor(.white)
-                        .padding(10)
-                        .background(Capsule().fill(draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.accentColor))
+                Group {
+                    if isSending {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Image(systemName: "arrow.up")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundColor(.white)
+                    }
                 }
+                .frame(width: 34, height: 34)
+                .background(
+                    Circle().fill(
+                        draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
+                            ? Color.gray.opacity(0.4)
+                            : Color.accentColor
+                    )
+                )
             }
             .disabled(draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
         }
@@ -1703,32 +1682,47 @@ private struct AIChatBubble: View {
     let message: AIChatMessage
 
     var body: some View {
-        HStack {
+        HStack(alignment: .top, spacing: 10) {
             if message.role == .assistant {
-                bubble
-                Spacer(minLength: 40)
+                Image(systemName: "sparkles")
+                    .font(.caption)
+                    .foregroundColor(.purple)
+                    .frame(width: 24, height: 24)
+                    .background(Color.purple.opacity(0.1), in: Circle())
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(message.text)
+                        .font(.body)
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                    Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2)
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+                .padding(14)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer(minLength: 50)
             } else {
-                Spacer(minLength: 40)
-                bubble
+                Spacer(minLength: 50)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(message.text)
+                        .font(.body)
+                        .foregroundColor(.white)
+                        .textSelection(.enabled)
+                    Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .padding(14)
+                .background(
+                    LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.85)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
             }
         }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var bubble: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(message.text)
-                .font(.body)
-                .foregroundColor(message.role == .assistant ? .primary : .white)
-            Text(message.timestamp.formatted(date: .omitted, time: .shortened))
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(message.role == .assistant ? Color(.secondarySystemBackground) : Color.accentColor)
-        )
     }
 }
 
@@ -1790,30 +1784,30 @@ private struct MarkerNibShape: Shape {
 /// Shiny "AI" badge used on the toolbar.
 private struct AISparkleGlyph: View {
     var body: some View {
-        Text("AI")
-            .font(.system(size: 12, weight: .bold, design: .rounded))
-            .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.black.opacity(0.95))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(Color.white.opacity(0.35), lineWidth: 1)
-                    .shadow(color: Color.accentColor.opacity(0.6), radius: 4)
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(LinearGradient(colors: [Color.accentColor.opacity(0.7), .clear, Color.accentColor.opacity(0.7)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing),
-                            lineWidth: 3)
-                    .blur(radius: 1.2)
-                    .opacity(0.6)
-            )
-            .shadow(color: Color.accentColor.opacity(0.45), radius: 6, x: 0, y: 2)
+        HStack(spacing: 4) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 12, weight: .bold))
+            Text("AI")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+        }
+        .foregroundStyle(
+            LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule(style: .continuous)
+                .fill(
+                    LinearGradient(colors: [Color.purple.opacity(0.15), Color.blue.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(
+                    LinearGradient(colors: [.purple.opacity(0.5), .blue.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1
+                )
+        )
     }
 }
 

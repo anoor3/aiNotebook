@@ -6,33 +6,62 @@ enum OpenAIChatService {
     // MARK: Configuration
     struct Configuration {
         static let model: String = "gpt-4o-mini"
+        private static let userDefaultsKey = "com.ainotebook.openai-api-key"
 
-        /// Read the key from Xcode Scheme environment variables (recommended)
-        /// or from `Info.plist` key `OPENAI_API_KEY`.
+        /// Read the key from multiple sources (env, Info.plist, bundled file, UserDefaults).
+        /// When found from any source, persists it to UserDefaults so it survives app restarts
+        /// outside Xcode.
         static var apiKey: String? {
             // Back-compat: older builds used OPENROUTER_API_KEY.
             let env = ProcessInfo.processInfo.environment
             let envKey = env["OPENAI_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let envKey, !envKey.isEmpty { return envKey }
+            if let envKey, !envKey.isEmpty {
+                persistKey(envKey)
+                return envKey
+            }
 
             let legacyEnvKey = env["OPENROUTER_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let legacyEnvKey, !legacyEnvKey.isEmpty { return legacyEnvKey }
+            if let legacyEnvKey, !legacyEnvKey.isEmpty {
+                persistKey(legacyEnvKey)
+                return legacyEnvKey
+            }
 
             let plistKey = Bundle.main.object(forInfoDictionaryKey: "OPENAI_API_KEY") as? String
             let trimmedPlistKey = plistKey?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let trimmedPlistKey, !trimmedPlistKey.isEmpty { return trimmedPlistKey }
+            if let trimmedPlistKey, !trimmedPlistKey.isEmpty {
+                persistKey(trimmedPlistKey)
+                return trimmedPlistKey
+            }
 
             let legacyPlistKey = Bundle.main.object(forInfoDictionaryKey: "OPENROUTER_API_KEY") as? String
             let trimmedLegacyPlistKey = legacyPlistKey?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let trimmedLegacyPlistKey, !trimmedLegacyPlistKey.isEmpty { return trimmedLegacyPlistKey }
+            if let trimmedLegacyPlistKey, !trimmedLegacyPlistKey.isEmpty {
+                persistKey(trimmedLegacyPlistKey)
+                return trimmedLegacyPlistKey
+            }
 
             let bundledKey = bundledEnvValue(named: "OPENAI_API_KEY")?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let bundledKey, !bundledKey.isEmpty { return bundledKey }
+            if let bundledKey, !bundledKey.isEmpty {
+                persistKey(bundledKey)
+                return bundledKey
+            }
 
             let legacyBundledKey = bundledEnvValue(named: "OPENROUTER_API_KEY")?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let legacyBundledKey, !legacyBundledKey.isEmpty { return legacyBundledKey }
+            if let legacyBundledKey, !legacyBundledKey.isEmpty {
+                persistKey(legacyBundledKey)
+                return legacyBundledKey
+            }
+
+            // Fallback: read from UserDefaults (persisted from a previous session)
+            let savedKey = UserDefaults.standard.string(forKey: userDefaultsKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let savedKey, !savedKey.isEmpty { return savedKey }
 
             return nil
+        }
+
+        /// Persist the key to UserDefaults so standalone launches (outside Xcode) can read it.
+        private static func persistKey(_ key: String) {
+            UserDefaults.standard.set(key, forKey: userDefaultsKey)
         }
 
         /// Optionally load a key from a bundled env file.

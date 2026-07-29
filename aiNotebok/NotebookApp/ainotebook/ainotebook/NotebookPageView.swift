@@ -1622,11 +1622,6 @@ private struct AIChatSheet: View {
                 .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .focused($isInputFocused)
                 .disabled(isSending)
-                .onAppear {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        isInputFocused = true
-                    }
-                }
 
             Button(action: sendMessage) {
                 Group {

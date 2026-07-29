@@ -174,9 +174,8 @@ struct NotebookPageView: View {
                             }
                             .padding(.vertical, 0)
                             .frame(maxWidth: .infinity)
-                            .scaleEffect(sharedZoomScale, anchor: .center)
+                            .scaleEffect(sharedZoomScale, anchor: .top)
                             .frame(maxWidth: .infinity)
-                            .animation(.interactiveSpring(response: 0.2, dampingFraction: 0.85), value: sharedZoomScale)
                         }
                         .coordinateSpace(name: scrollSpaceName)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -184,11 +183,13 @@ struct NotebookPageView: View {
                             MagnificationGesture()
                                 .onChanged { value in
                                     let newScale = pinchBaseScale * value
-                                    sharedZoomScale = max(0.5, min(newScale, 3.0))
+                                    sharedZoomScale = max(0.75, min(newScale, 2.5))
                                 }
                                 .onEnded { value in
-                                    let final = max(0.5, min(pinchBaseScale * value, 3.0))
-                                    sharedZoomScale = final
+                                    let final = max(0.75, min(pinchBaseScale * value, 2.5))
+                                    withAnimation(.easeOut(duration: 0.15)) {
+                                        sharedZoomScale = final
+                                    }
                                     pinchBaseScale = final
                                 }
                         )

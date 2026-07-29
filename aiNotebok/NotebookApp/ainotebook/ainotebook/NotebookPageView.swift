@@ -141,7 +141,7 @@ struct NotebookPageView: View {
 
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 2) {
+                            LazyVStack(spacing: 8) {
                                 coverPage(pageSize: pageSize,
                                           viewportHeight: viewportHeight,
                                           isZoomedOut: isZoomedOut)
@@ -181,24 +181,26 @@ struct NotebookPageView: View {
                 .padding(.horizontal, 0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .onPreferenceChange(PageVisibilityPreferenceKey.self) { values in
-                    guard let closest = values.min(by: { $0.value < $1.value }) else { return }
-                    if closest.key == coverPageID {
-                        if !isCoverActive {
-                            isCoverActive = true
+                    DispatchQueue.main.async {
+                        guard let closest = values.min(by: { $0.value < $1.value }) else { return }
+                        if closest.key == coverPageID {
+                            if !isCoverActive {
+                                isCoverActive = true
+                                showPageIndicatorTemporary()
+                            }
+                            return
+                        }
+
+                        if isCoverActive {
+                            isCoverActive = false
+                        }
+
+                        guard !isProgrammaticJump else { return }
+                        if pageStore.activePageID != closest.key {
+                            suppressScrollToActivePage = true
+                            pageStore.activePageID = closest.key
                             showPageIndicatorTemporary()
                         }
-                        return
-                    }
-
-                    if isCoverActive {
-                        isCoverActive = false
-                    }
-
-                    guard !isProgrammaticJump else { return }
-                    if pageStore.activePageID != closest.key {
-                        suppressScrollToActivePage = true
-                        pageStore.activePageID = closest.key
-                        showPageIndicatorTemporary()
                     }
                 }
             }

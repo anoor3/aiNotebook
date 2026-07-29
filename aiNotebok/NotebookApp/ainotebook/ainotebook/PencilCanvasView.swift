@@ -106,7 +106,9 @@ struct PencilCanvasView: UIViewRepresentable {
             hostView?.setNeedsGridRedraw()
             hostView?.updateVisibleInkTiles()
             controller.zoomScale = z
-            sharedZoomScale?.wrappedValue = z
+            DispatchQueue.main.async { [weak self] in
+                self?.sharedZoomScale?.wrappedValue = z
+            }
         }
 
         func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
@@ -121,7 +123,9 @@ struct PencilCanvasView: UIViewRepresentable {
             hostView?.updateZoomScale(clampedScale)
             hostView?.updateVisibleInkTiles()
             controller.zoomScale = clampedScale
-            sharedZoomScale?.wrappedValue = clampedScale
+            DispatchQueue.main.async { [weak self] in
+                self?.sharedZoomScale?.wrappedValue = clampedScale
+            }
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {

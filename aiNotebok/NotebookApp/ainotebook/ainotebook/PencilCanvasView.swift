@@ -41,6 +41,13 @@ struct PencilCanvasView: UIViewRepresentable {
         uiView.updatePaperColor(paperColor)
         updateOverlay(in: uiView)
         context.coordinator.handleToolChange(newTool: controller.tool)
+
+        // Sync zoom across all pages
+        if let targetZoom = sharedZoomScale?.wrappedValue,
+           abs(controller.zoomScale - targetZoom) > 0.01 {
+            uiView.applyZoomScale(targetZoom, animated: false)
+            controller.zoomScale = targetZoom
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -421,8 +428,8 @@ final class ZoomableCanvasHostView: UIView {
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.minimumZoomScale = 1.0
-        scrollView.maximumZoomScale = 1.0
-        scrollView.bouncesZoom = false
+        scrollView.maximumZoomScale = 3.0
+        scrollView.bouncesZoom = true
         scrollView.isMultipleTouchEnabled = true
         scrollView.backgroundColor = .clear
         scrollView.showsVerticalScrollIndicator = false

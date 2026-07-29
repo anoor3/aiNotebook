@@ -127,8 +127,7 @@ struct NotebookPageView: View {
     var body: some View {
         GeometryReader { geometry in
             let pageSize = basePageSize
-            let baseScale = self.pageScale(for: geometry.size.width)
-            let pageScale = baseScale * sharedZoomScale
+            let pageScale = self.pageScale(for: geometry.size.width)
             let scaledHeight = pageSize.height * pageScale
             let viewportHeight = max(min(scaledHeight + 60, geometry.size.height - 80), 420)
             let isZoomedOut = sharedZoomScale < 0.85
@@ -178,20 +177,6 @@ struct NotebookPageView: View {
                         }
                         .coordinateSpace(name: scrollSpaceName)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .gesture(
-                            MagnificationGesture()
-                                .onChanged { value in
-                                    let newScale = pinchBaseScale * value
-                                    sharedZoomScale = max(0.75, min(newScale, 2.5))
-                                }
-                                .onEnded { value in
-                                    let final = max(0.75, min(pinchBaseScale * value, 2.5))
-                                    withAnimation(.easeOut(duration: 0.15)) {
-                                        sharedZoomScale = final
-                                    }
-                                    pinchBaseScale = final
-                                }
-                        )
                         .onAppear {
                             scrollProxy = proxy
                             scrollToActivePage(animated: false)

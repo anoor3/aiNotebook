@@ -1511,6 +1511,7 @@ private struct AIChatSheet: View {
                 .fill(Color(.systemBackground))
                 .shadow(color: .black.opacity(0.15), radius: 20, x: -5, y: 0)
         )
+        .environment(\.font, .system(.body, design: .default))
     }
 
     private var header: some View {

@@ -311,15 +311,11 @@ private struct ThemedNotebookCard: View {
     private var retroCard: some View {
         ZStack {
             RoundedRectangle(cornerRadius: theme.cardCornerRadius, style: .continuous)
-                .fill(LinearGradient(colors: [notebook.coverColor.opacity(0.95),
-                                              notebook.coverColor.opacity(0.65)],
-                                     startPoint: .topLeading,
-                                     endPoint: .bottomTrailing))
+                .fill(notebook.coverColor)
                 .shadow(color: theme.cardShadowColor, radius: theme.cardShadowRadius, x: 0, y: 4)
 
-            // Unique decorative pattern per notebook (stable across launches)
-            NotebookPatternOverlay(patternIndex: notebook.title.count + notebook.pages.count)
-                .opacity(0.1)
+            // Notebook/binder decorative lines
+            NotebookPatternOverlay(patternIndex: 0)
                 .clipShape(RoundedRectangle(cornerRadius: theme.cardCornerRadius, style: .continuous))
 
             VStack(spacing: 16) {
@@ -393,86 +389,72 @@ private struct NotebookPatternOverlay: View {
 
     var body: some View {
         Canvas { context, size in
-            switch patternIndex % 6 {
-            case 0: drawCircles(context: context, size: size)
-            case 1: drawDiagonalLines(context: context, size: size)
-            case 2: drawDots(context: context, size: size)
-            case 3: drawCrosshatch(context: context, size: size)
-            case 4: drawWaves(context: context, size: size)
-            default: drawDiamonds(context: context, size: size)
-            }
-        }
-    }
+            let w = size.width
+            let h = size.height
+            let lineColor = Color.white.opacity(0.35)
 
-    private func drawCircles(context: GraphicsContext, size: CGSize) {
-        let step: CGFloat = 44
-        for x in stride(from: step, through: size.width, by: step) {
-            for y in stride(from: step, through: size.height, by: step) {
-                let rect = CGRect(x: x - 10, y: y - 10, width: 20, height: 20)
-                context.stroke(Path(ellipseIn: rect), with: .color(.white), lineWidth: 1.2)
-            }
-        }
-    }
-
-    private func drawDiagonalLines(context: GraphicsContext, size: CGSize) {
-        let step: CGFloat = 24
-        for offset in stride(from: -size.height, through: size.width + size.height, by: step) {
-            var path = Path()
-            path.move(to: CGPoint(x: offset, y: 0))
-            path.addLine(to: CGPoint(x: offset - size.height, y: size.height))
-            context.stroke(path, with: .color(.white), lineWidth: 1)
-        }
-    }
-
-    private func drawDots(context: GraphicsContext, size: CGSize) {
-        let step: CGFloat = 28
-        for x in stride(from: step / 2, through: size.width, by: step) {
-            for y in stride(from: step / 2, through: size.height, by: step) {
-                let rect = CGRect(x: x - 2.5, y: y - 2.5, width: 5, height: 5)
-                context.fill(Path(ellipseIn: rect), with: .color(.white))
-            }
-        }
-    }
-
-    private func drawCrosshatch(context: GraphicsContext, size: CGSize) {
-        let step: CGFloat = 32
-        for offset in stride(from: -size.height, through: size.width + size.height, by: step) {
-            var p1 = Path()
-            p1.move(to: CGPoint(x: offset, y: 0))
-            p1.addLine(to: CGPoint(x: offset - size.height, y: size.height))
-            context.stroke(p1, with: .color(.white), lineWidth: 0.7)
-            var p2 = Path()
-            p2.move(to: CGPoint(x: offset, y: 0))
-            p2.addLine(to: CGPoint(x: offset + size.height, y: size.height))
-            context.stroke(p2, with: .color(.white), lineWidth: 0.7)
-        }
-    }
-
-    private func drawWaves(context: GraphicsContext, size: CGSize) {
-        let step: CGFloat = 34
-        for y in stride(from: step, through: size.height, by: step) {
-            var path = Path()
-            path.move(to: CGPoint(x: 0, y: y))
-            for x in stride(from: 0, through: size.width, by: 10) {
-                let yOff = sin(x / 20) * 6
-                path.addLine(to: CGPoint(x: x, y: y + yOff))
-            }
-            context.stroke(path, with: .color(.white), lineWidth: 1)
-        }
-    }
-
-    private func drawDiamonds(context: GraphicsContext, size: CGSize) {
-        let step: CGFloat = 40
-        for x in stride(from: step, through: size.width, by: step) {
-            for y in stride(from: step, through: size.height, by: step) {
+            // Spine: vertical lines on left
+            for x in [CGFloat(8), CGFloat(12), CGFloat(16)] {
                 var path = Path()
-                path.move(to: CGPoint(x: x, y: y - 8))
-                path.addLine(to: CGPoint(x: x + 8, y: y))
-                path.addLine(to: CGPoint(x: x, y: y + 8))
-                path.addLine(to: CGPoint(x: x - 8, y: y))
-                path.closeSubpath()
-                context.stroke(path, with: .color(.white), lineWidth: 0.8)
+                path.move(to: CGPoint(x: x, y: 4))
+                path.addLine(to: CGPoint(x: x, y: h - 4))
+                context.stroke(path, with: .color(lineColor), lineWidth: 0.8)
             }
+
+            // Horizontal lines near top (binding)
+            for y in [CGFloat(14), CGFloat(20), CGFloat(26)] {
+                var path = Path()
+                path.move(to: CGPoint(x: 24, y: y))
+                path.addLine(to: CGPoint(x: w - 8, y: y))
+                context.stroke(path, with: .color(lineColor), lineWidth: 0.6)
+            }
+
+            // Spine accent on right side
+            let rx = w - 12
+            var rightSpine = Path()
+            rightSpine.move(to: CGPoint(x: rx, y: 30))
+            rightSpine.addLine(to: CGPoint(x: rx, y: h - 10))
+            context.stroke(rightSpine, with: .color(lineColor), lineWidth: 0.6)
+
+            // Corner accents
+            let cornerLen: CGFloat = 14
+            let inset: CGFloat = 6
+            // Top-left
+            var tl = Path()
+            tl.move(to: CGPoint(x: inset + 20, y: inset + 30))
+            tl.addLine(to: CGPoint(x: inset + 20 + cornerLen, y: inset + 30))
+            tl.move(to: CGPoint(x: inset + 20, y: inset + 30))
+            tl.addLine(to: CGPoint(x: inset + 20, y: inset + 30 + cornerLen))
+            context.stroke(tl, with: .color(lineColor), lineWidth: 0.8)
+            // Top-right
+            var tr = Path()
+            tr.move(to: CGPoint(x: w - inset - 20, y: inset + 30))
+            tr.addLine(to: CGPoint(x: w - inset - 20 - cornerLen, y: inset + 30))
+            tr.move(to: CGPoint(x: w - inset - 20, y: inset + 30))
+            tr.addLine(to: CGPoint(x: w - inset - 20, y: inset + 30 + cornerLen))
+            context.stroke(tr, with: .color(lineColor), lineWidth: 0.8)
+            // Bottom-left
+            var bl = Path()
+            bl.move(to: CGPoint(x: inset + 20, y: h - inset - 30))
+            bl.addLine(to: CGPoint(x: inset + 20 + cornerLen, y: h - inset - 30))
+            bl.move(to: CGPoint(x: inset + 20, y: h - inset - 30))
+            bl.addLine(to: CGPoint(x: inset + 20, y: h - inset - 30 - cornerLen))
+            context.stroke(bl, with: .color(lineColor), lineWidth: 0.8)
+            // Bottom-right
+            var br = Path()
+            br.move(to: CGPoint(x: w - inset - 20, y: h - inset - 30))
+            br.addLine(to: CGPoint(x: w - inset - 20 - cornerLen, y: h - inset - 30))
+            br.move(to: CGPoint(x: w - inset - 20, y: h - inset - 30))
+            br.addLine(to: CGPoint(x: w - inset - 20, y: h - inset - 30 - cornerLen))
+            context.stroke(br, with: .color(lineColor), lineWidth: 0.8)
+
+            // Title label box (dashed rectangle in center)
+            let labelInsetX: CGFloat = 30
+            let labelTop: CGFloat = h * 0.32
+            let labelBottom: CGFloat = h * 0.62
+            let labelRect = CGRect(x: labelInsetX, y: labelTop, width: w - labelInsetX * 2, height: labelBottom - labelTop)
+            let labelPath = Path(roundedRect: labelRect, cornerRadius: 3)
+            context.stroke(labelPath, with: .color(lineColor), style: StrokeStyle(lineWidth: 0.8, dash: [4, 3]))
         }
     }
 }

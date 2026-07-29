@@ -123,9 +123,7 @@ enum LibraryThemePreference {
     static func load() -> LibraryThemeID {
         guard let raw = UserDefaults.standard.string(forKey: key),
               let themeID = LibraryThemeID(rawValue: raw) else {
-            // Migrate from old bool preference
-            let oldDark = UserDefaults.standard.bool(forKey: "NotebookThemePreference")
-            return oldDark ? .retroDark : .classic
+            return .retroDark
         }
         return themeID
     }

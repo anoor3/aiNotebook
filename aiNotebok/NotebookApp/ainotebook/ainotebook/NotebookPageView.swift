@@ -174,8 +174,9 @@ struct NotebookPageView: View {
                             }
                             .padding(.vertical, 0)
                             .frame(maxWidth: .infinity)
-                            .scaleEffect(sharedZoomScale, anchor: .top)
+                            .scaleEffect(sharedZoomScale, anchor: .center)
                             .frame(maxWidth: .infinity)
+                            .animation(.interactiveSpring(response: 0.2, dampingFraction: 0.85), value: sharedZoomScale)
                         }
                         .coordinateSpace(name: scrollSpaceName)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)

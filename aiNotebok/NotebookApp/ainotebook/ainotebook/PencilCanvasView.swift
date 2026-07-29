@@ -421,8 +421,8 @@ final class ZoomableCanvasHostView: UIView {
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.minimumZoomScale = 1.0
-        scrollView.maximumZoomScale = 3.0
-        scrollView.bouncesZoom = true
+        scrollView.maximumZoomScale = 1.0
+        scrollView.bouncesZoom = false
         scrollView.isMultipleTouchEnabled = true
         scrollView.backgroundColor = .clear
         scrollView.showsVerticalScrollIndicator = false

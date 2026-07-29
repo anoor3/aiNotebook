@@ -90,6 +90,7 @@ struct NotebookPageView: View {
     @State private var shapeAttachmentKinds: [UUID: ShapeTemplate.Kind] = [:]
     @State private var pasteboardHasImage = UIPasteboard.general.hasImages
     @State private var sharedZoomScale: CGFloat = 1.0
+    @State private var pinchBaseScale: CGFloat = 1.0
 
     private var workspaceBackground: Color {
         switch pageColor {
@@ -154,9 +155,8 @@ struct NotebookPageView: View {
 
                                 ForEach(pageStore.pages, id: \.id) { controller in
                                     Rectangle()
-                                        .fill(Color.gray.opacity(0.3))
-                                        .frame(height: 1.5)
-                                        .frame(maxWidth: pageSize.width * pageScale)
+                                        .fill(Color.black.opacity(0.6))
+                                        .frame(height: 2)
 
                                     notebookPage(for: controller,
                                                  pageSize: pageSize,
@@ -174,9 +174,23 @@ struct NotebookPageView: View {
                             }
                             .padding(.vertical, 0)
                             .frame(maxWidth: .infinity)
+                            .scaleEffect(sharedZoomScale, anchor: .top)
+                            .frame(maxWidth: .infinity)
                         }
                         .coordinateSpace(name: scrollSpaceName)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .gesture(
+                            MagnificationGesture()
+                                .onChanged { value in
+                                    let newScale = pinchBaseScale * value
+                                    sharedZoomScale = max(0.5, min(newScale, 3.0))
+                                }
+                                .onEnded { value in
+                                    let final = max(0.5, min(pinchBaseScale * value, 3.0))
+                                    sharedZoomScale = final
+                                    pinchBaseScale = final
+                                }
+                        )
                         .onAppear {
                             scrollProxy = proxy
                             scrollToActivePage(animated: false)

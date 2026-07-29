@@ -153,6 +153,10 @@ struct NotebookPageView: View {
                                     .id(coverPageID)
 
                                 ForEach(pageStore.pages, id: \.id) { controller in
+                                    Rectangle()
+                                        .fill(Color.black.opacity(0.7))
+                                        .frame(height: 3)
+
                                     notebookPage(for: controller,
                                                  pageSize: pageSize,
                                                  viewportHeight: viewportHeight,
@@ -1487,9 +1491,9 @@ private struct AIChatSheet: View {
             if let errorMessage {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(.caption, design: .monospaced))
+                        .font(.caption)
                     Text(errorMessage)
-                        .font(.system(.caption, design: .monospaced))
+                        .font(.caption)
                         .lineLimit(2)
                 }
                 .foregroundColor(.red)
@@ -1515,16 +1519,16 @@ private struct AIChatSheet: View {
     private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: "sparkles")
-                .font(.system(.title3, design: .monospaced))
+                .font(.title3)
                 .foregroundStyle(
                     LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("AI Assistant")
-                    .font(.system(.headline, design: .monospaced))
+                    .font(.headline)
                 Text("Ask anything about your notes")
-                    .font(.system(.caption, design: .monospaced))
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
 
@@ -1538,9 +1542,9 @@ private struct AIChatSheet: View {
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.system(.caption, design: .monospaced).weight(.semibold))
+                            .font(.caption.weight(.semibold))
                         Text("New Chat")
-                            .font(.system(.caption, design: .monospaced).weight(.semibold))
+                            .font(.caption.weight(.semibold))
                     }
                     .foregroundColor(.accentColor)
                     .padding(.horizontal, 12)
@@ -1552,7 +1556,7 @@ private struct AIChatSheet: View {
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.system(.subheadline, design: .monospaced).weight(.medium))
+                    .font(.subheadline.weight(.medium))
                     .foregroundColor(.secondary)
                     .padding(8)
                     .background(Color(.tertiarySystemFill), in: Circle())
@@ -1572,9 +1576,9 @@ private struct AIChatSheet: View {
                         )
                     VStack(spacing: 6) {
                         Text("Start a conversation")
-                            .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                            .font(.subheadline.weight(.semibold))
                         Text("Ask questions, brainstorm ideas, or get help with your notes.")
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.caption)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                     }
@@ -1629,7 +1633,7 @@ private struct AIChatSheet: View {
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                     } else {
                         Image(systemName: "arrow.up")
-                            .font(.system(.subheadline, design: .monospaced).weight(.bold))
+                            .font(.subheadline.weight(.bold))
                             .foregroundColor(.white)
                     }
                 }
@@ -1679,18 +1683,18 @@ private struct AIChatBubble: View {
         HStack(alignment: .top, spacing: 10) {
             if message.role == .assistant {
                 Image(systemName: "sparkles")
-                    .font(.system(.caption, design: .monospaced))
+                    .font(.caption)
                     .foregroundColor(.purple)
                     .frame(width: 24, height: 24)
                     .background(Color.purple.opacity(0.1), in: Circle())
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(message.text)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.body)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
                     Text(message.timestamp.formatted(date: .omitted, time: .shortened))
-                        .font(.system(.caption2, design: .monospaced))
+                        .font(.caption2)
                         .foregroundColor(.secondary.opacity(0.7))
                 }
                 .padding(14)
@@ -1703,11 +1707,11 @@ private struct AIChatBubble: View {
 
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(message.text)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.body)
                         .foregroundColor(.white)
                         .textSelection(.enabled)
                     Text(message.timestamp.formatted(date: .omitted, time: .shortened))
-                        .font(.system(.caption2, design: .monospaced))
+                        .font(.caption2)
                         .foregroundColor(.white.opacity(0.7))
                 }
                 .padding(14)

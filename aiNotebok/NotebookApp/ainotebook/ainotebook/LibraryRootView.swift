@@ -389,72 +389,16 @@ private struct NotebookPatternOverlay: View {
 
     var body: some View {
         Canvas { context, size in
-            let w = size.width
             let h = size.height
             let lineColor = Color.white.opacity(0.35)
 
-            // Spine: vertical lines on left
+            // Spine: 3 vertical lines on left
             for x in [CGFloat(8), CGFloat(12), CGFloat(16)] {
                 var path = Path()
                 path.move(to: CGPoint(x: x, y: 4))
                 path.addLine(to: CGPoint(x: x, y: h - 4))
                 context.stroke(path, with: .color(lineColor), lineWidth: 0.8)
             }
-
-            // Horizontal lines near top (binding)
-            for y in [CGFloat(14), CGFloat(20), CGFloat(26)] {
-                var path = Path()
-                path.move(to: CGPoint(x: 24, y: y))
-                path.addLine(to: CGPoint(x: w - 8, y: y))
-                context.stroke(path, with: .color(lineColor), lineWidth: 0.6)
-            }
-
-            // Spine accent on right side
-            let rx = w - 12
-            var rightSpine = Path()
-            rightSpine.move(to: CGPoint(x: rx, y: 30))
-            rightSpine.addLine(to: CGPoint(x: rx, y: h - 10))
-            context.stroke(rightSpine, with: .color(lineColor), lineWidth: 0.6)
-
-            // Corner accents
-            let cornerLen: CGFloat = 14
-            let inset: CGFloat = 6
-            // Top-left
-            var tl = Path()
-            tl.move(to: CGPoint(x: inset + 20, y: inset + 30))
-            tl.addLine(to: CGPoint(x: inset + 20 + cornerLen, y: inset + 30))
-            tl.move(to: CGPoint(x: inset + 20, y: inset + 30))
-            tl.addLine(to: CGPoint(x: inset + 20, y: inset + 30 + cornerLen))
-            context.stroke(tl, with: .color(lineColor), lineWidth: 0.8)
-            // Top-right
-            var tr = Path()
-            tr.move(to: CGPoint(x: w - inset - 20, y: inset + 30))
-            tr.addLine(to: CGPoint(x: w - inset - 20 - cornerLen, y: inset + 30))
-            tr.move(to: CGPoint(x: w - inset - 20, y: inset + 30))
-            tr.addLine(to: CGPoint(x: w - inset - 20, y: inset + 30 + cornerLen))
-            context.stroke(tr, with: .color(lineColor), lineWidth: 0.8)
-            // Bottom-left
-            var bl = Path()
-            bl.move(to: CGPoint(x: inset + 20, y: h - inset - 30))
-            bl.addLine(to: CGPoint(x: inset + 20 + cornerLen, y: h - inset - 30))
-            bl.move(to: CGPoint(x: inset + 20, y: h - inset - 30))
-            bl.addLine(to: CGPoint(x: inset + 20, y: h - inset - 30 - cornerLen))
-            context.stroke(bl, with: .color(lineColor), lineWidth: 0.8)
-            // Bottom-right
-            var br = Path()
-            br.move(to: CGPoint(x: w - inset - 20, y: h - inset - 30))
-            br.addLine(to: CGPoint(x: w - inset - 20 - cornerLen, y: h - inset - 30))
-            br.move(to: CGPoint(x: w - inset - 20, y: h - inset - 30))
-            br.addLine(to: CGPoint(x: w - inset - 20, y: h - inset - 30 - cornerLen))
-            context.stroke(br, with: .color(lineColor), lineWidth: 0.8)
-
-            // Title label box (dashed rectangle in center)
-            let labelInsetX: CGFloat = 30
-            let labelTop: CGFloat = h * 0.32
-            let labelBottom: CGFloat = h * 0.62
-            let labelRect = CGRect(x: labelInsetX, y: labelTop, width: w - labelInsetX * 2, height: labelBottom - labelTop)
-            let labelPath = Path(roundedRect: labelRect, cornerRadius: 3)
-            context.stroke(labelPath, with: .color(lineColor), style: StrokeStyle(lineWidth: 0.8, dash: [4, 3]))
         }
     }
 }
